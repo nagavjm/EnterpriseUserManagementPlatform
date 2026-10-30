@@ -1,0 +1,18 @@
+.progress {
+  background-color: #f1f5f9;
+  border-radius: 9999px;
+}
+
+.progress-bar {
+  border-radius: 9999px;
+  transition: width 0.6s ease;
+}
+
+.table th {
+  font-size: 0.8125rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
+  font-weight: 600;
+}
+

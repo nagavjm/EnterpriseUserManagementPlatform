@@ -1,0 +1,207 @@
+<div class="container-fluid py-4">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h2 class="h3 fw-bold text-dark mb-1">User Management</h2>
+      <p class="text-muted mb-0">Search, filter, edit, and manage enterprise user access records.</p>
+    </div>
+    <div>
+      <a routerLink="/users/new" class="btn btn-primary shadow-sm">
+        <i class="bi bi-person-plus-fill me-1"></i> Add User
+      </a>
+    </div>
+  </div>
+
+  <!-- Search & Filter Card -->
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+      <div class="row g-3">
+        <!-- Search Field -->
+        <div class="col-12 col-md-4">
+          <label class="form-label small fw-semibold text-muted">Search User</label>
+          <div class="input-group">
+            <span class="input-group-text bg-white"><i class="bi bi-search text-muted"></i></span>
+            <input 
+              type="text" 
+              class="form-control" 
+              placeholder="First name, last name, email..."
+              [(ngModel)]="searchTerm" 
+              (keyup.enter)="onSearch()" />
+          </div>
+        </div>
+
+        <!-- Department Filter -->
+        <div class="col-12 col-sm-6 col-md-2">
+          <label class="form-label small fw-semibold text-muted">Department</label>
+          <select class="form-select" [(ngModel)]="selectedDepartment" (change)="onFilterChange()">
+            <option value="">All Departments</option>
+            <option *ngFor="let dept of departments" [value]="dept">{{ dept }}</option>
+          </select>
+        </div>
+
+        <!-- Role Filter -->
+        <div class="col-12 col-sm-6 col-md-2">
+          <label class="form-label small fw-semibold text-muted">Role</label>
+          <select class="form-select" [(ngModel)]="selectedRole" (change)="onFilterChange()">
+            <option value="">All Roles</option>
+            <option *ngFor="let r of roles" [value]="r">{{ r }}</option>
+          </select>
+        </div>
+
+        <!-- Status Filter -->
+        <div class="col-12 col-sm-6 col-md-2">
+          <label class="form-label small fw-semibold text-muted">Status</label>
+          <select class="form-select" [(ngModel)]="selectedStatus" (change)="onFilterChange()">
+            <option value="">All Statuses</option>
+            <option value="true">Active Only</option>
+            <option value="false">Inactive Only</option>
+          </select>
+        </div>
+
+        <!-- Actions -->
+        <div class="col-12 col-sm-6 col-md-2 d-flex align-items-end gap-2">
+          <button class="btn btn-primary w-100" (click)="onSearch()" [disabled]="isLoading">
+            <i class="bi bi-funnel-fill me-1"></i> Filter
+          </button>
+          <button class="btn btn-outline-secondary" (click)="onResetFilters()" title="Reset Filters">
+            <i class="bi bi-arrow-counterclockwise"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <app-loading-spinner [isLoading]="isLoading" message="Loading users from JSON storage..."></app-loading-spinner>
+
+  <!-- Users Table Card -->
+  <div *ngIf="!isLoading && pagedUsers" class="card border-0 shadow-sm">
+    <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+      <span class="small text-muted fw-semibold">
+        Showing {{ pagedUsers.items.length }} of {{ pagedUsers.totalCount }} total users
+      </span>
+      <div class="d-flex align-items-center gap-2">
+        <label class="small text-muted mb-0">Page size:</label>
+        <select class="form-select form-select-sm" style="width: auto;" [(ngModel)]="pageSize" (change)="onFilterChange()">
+          <option [ngValue]="5">5</option>
+          <option [ngValue]="10">10</option>
+          <option [ngValue]="25">25</option>
+          <option [ngValue]="50">50</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th class="cursor-pointer" (click)="onSort('FirstName')">
+              Name
+              <i class="bi" [ngClass]="sortBy === 'FirstName' ? (sortDescending ? 'bi-sort-alpha-down-alt' : 'bi-sort-alpha-down') : 'bi-arrow-down-up text-muted'"></i>
+            </th>
+            <th class="cursor-pointer" (click)="onSort('Email')">
+              Email
+              <i class="bi" [ngClass]="sortBy === 'Email' ? (sortDescending ? 'bi-sort-alpha-down-alt' : 'bi-sort-alpha-down') : 'bi-arrow-down-up text-muted'"></i>
+            </th>
+            <th class="cursor-pointer" (click)="onSort('Department')">
+              Department
+              <i class="bi" [ngClass]="sortBy === 'Department' ? (sortDescending ? 'bi-sort-down-alt' : 'bi-sort-down') : 'bi-arrow-down-up text-muted'"></i>
+            </th>
+            <th class="cursor-pointer" (click)="onSort('Role')">
+              Role
+              <i class="bi" [ngClass]="sortBy === 'Role' ? (sortDescending ? 'bi-sort-down-alt' : 'bi-sort-down') : 'bi-arrow-down-up text-muted'"></i>
+            </th>
+            <th class="cursor-pointer" (click)="onSort('IsActive')">
+              Status
+              <i class="bi" [ngClass]="sortBy === 'IsActive' ? (sortDescending ? 'bi-sort-down-alt' : 'bi-sort-down') : 'bi-arrow-down-up text-muted'"></i>
+            </th>
+            <th class="cursor-pointer" (click)="onSort('CreatedDate')">
+              Created Date
+              <i class="bi" [ngClass]="sortBy === 'CreatedDate' ? (sortDescending ? 'bi-sort-numeric-down-alt' : 'bi-sort-numeric-down') : 'bi-arrow-down-up text-muted'"></i>
+            </th>
+            <th class="text-end">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let user of pagedUsers.items">
+            <td>
+              <div class="d-flex align-items-center">
+                <div class="avatar bg-primary-subtle text-primary rounded-circle d-flex align-items-center justify-content-center me-2 fw-bold" style="width: 36px; height: 36px;">
+                  {{ user.firstName[0] }}{{ user.lastName[0] }}
+                </div>
+                <div>
+                  <div class="fw-semibold">{{ user.fullName }}</div>
+                </div>
+              </div>
+            </td>
+            <td class="text-muted">{{ user.email }}</td>
+            <td><span class="badge bg-light text-dark border">{{ user.departmentName }}</span></td>
+            <td><span class="badge bg-primary-subtle text-primary">{{ user.roleName }}</span></td>
+            <td>
+              <button 
+                class="badge border-0 cursor-pointer text-white" 
+                [ngClass]="user.isActive ? 'bg-success' : 'bg-secondary'"
+                (click)="toggleStatus(user)"
+                [title]="user.isActive ? 'Click to deactivate' : 'Click to activate'">
+                <i class="bi" [ngClass]="user.isActive ? 'bi-check-circle' : 'bi-x-circle'"></i>
+                {{ user.isActive ? 'Active' : 'Inactive' }}
+              </button>
+            </td>
+            <td class="text-muted small">{{ user.createdDate | date:'mediumDate' }}</td>
+            <td class="text-end">
+              <div class="btn-group btn-group-sm">
+                <a [routerLink]="['/users', user.id]" class="btn btn-outline-secondary" title="View Details">
+                  <i class="bi bi-eye"></i>
+                </a>
+                <a [routerLink]="['/users', user.id, 'edit']" class="btn btn-outline-primary" title="Edit User">
+                  <i class="bi bi-pencil"></i>
+                </a>
+                <button class="btn btn-outline-danger" (click)="openDeleteModal(user)" title="Delete User">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </div>
+            </td>
+          </tr>
+          <tr *ngIf="pagedUsers.items.length === 0">
+            <td colspan="7" class="text-center py-5 text-muted">
+              <i class="bi bi-search fs-2 d-block mb-2"></i>
+              No users found matching your search and filter criteria.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pagination Controls -->
+    <div *ngIf="pagedUsers.totalPages > 1" class="card-footer bg-white d-flex justify-content-between align-items-center py-3">
+      <span class="small text-muted">
+        Page {{ pagedUsers.pageNumber }} of {{ pagedUsers.totalPages }}
+      </span>
+      <nav aria-label="User navigation">
+        <ul class="pagination pagination-sm mb-0">
+          <li class="page-item" [class.disabled]="!pagedUsers.hasPreviousPage">
+            <button class="page-link" (click)="goToPage(currentPage - 1)">Previous</button>
+          </li>
+          <li 
+            *ngFor="let page of getPageNumbers()" 
+            class="page-item" 
+            [class.active]="page === currentPage">
+            <button class="page-link" (click)="goToPage(page)">{{ page }}</button>
+          </li>
+          <li class="page-item" [class.disabled]="!pagedUsers.hasNextPage">
+            <button class="page-link" (click)="goToPage(currentPage + 1)">Next</button>
+          </li>
+        </ul>
+      </nav>
+    </div>
+  </div>
+
+  <!-- Delete Confirmation Modal -->
+  <app-confirm-modal
+    [isOpen]="isDeleteModalOpen"
+    title="Delete User Record"
+    [message]="'Are you sure you want to permanently delete ' + (userToDelete?.fullName ?? 'this user') + '? This change will be saved to the physical JSON storage.'"
+    confirmButtonText="Delete Permanently"
+    confirmButtonClass="btn-danger"
+    (confirm)="confirmDelete()"
+    (cancel)="closeDeleteModal()">
+  </app-confirm-modal>
+</div>
