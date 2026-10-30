@@ -1,0 +1,47 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: eump-backend
+    restart: unless-stopped
+    ports:
+      - "5100:5100"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:5100
+      - JsonStorage__StorageDirectory=/app/data
+      - JsonStorage__FileName=users.json
+    volumes:
+      - eump-storage:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5100/health/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - eump-network
+
+  frontend:
+    build:
+      context: ./frontend/enterprise-user-management-ui
+      dockerfile: Dockerfile
+    container_name: eump-frontend
+    restart: unless-stopped
+    ports:
+      - "4200:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - eump-network
+
+networks:
+  eump-network:
+    driver: bridge
+
+volumes:
+  eump-storage:
+    name: eump-data
+
