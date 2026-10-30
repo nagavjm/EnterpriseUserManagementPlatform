@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-deployment
+  namespace: eump
+  labels:
+    app.kubernetes.io/name: enterprise-user-management-platform
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/part-of: eump
+spec:
+  # NOTE ON REPLICAS:
+  # Physical JSON file persistence uses an in-process asynchronous semaphore (SemaphoreSlim)
+  # and atomic file swapping (.tmp -> .json). Setting replicas to 1 guarantees thread-safe,
+  # zero-race-condition writes without requiring an external distributed lock manager.
+  # Pod rescheduling and recovery are managed automatically by Kubernetes via the PersistentVolumeClaim.
+  replicas: 1
+  strategy:
+    type: Recreate # Ensures old pod unmounts the ReadWriteOnce PVC before new pod mounts it
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: enterprise-user-management-platform
+      app.kubernetes.io/component: backend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: enterprise-user-management-platform
+        app.kubernetes.io/component: backend
+        app.kubernetes.io/part-of: eump
+    spec:
+      containers:
+        - name: backend
+          image: enterpriseusermanagementplatform-backend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5100
+              name: http
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: eump-config
+            - secretRef:
+                name: eump-secret
+          volumeMounts:
+            - name: storage-volume
+              mountPath: /app/data
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          # Kubernetes Liveness Probe: verifies that the .NET 9 Kestrel process is alive
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5100
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          # Kubernetes Readiness Probe: verifies that the physical JSON storage is accessible
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 5100
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: storage-volume
+          persistentVolumeClaim:
+            claimName: eump-storage-pvc
+

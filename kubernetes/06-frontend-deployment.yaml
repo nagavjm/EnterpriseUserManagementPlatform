@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-deployment
+  namespace: eump
+  labels:
+    app.kubernetes.io/name: enterprise-user-management-platform
+    app.kubernetes.io/component: frontend
+    app.kubernetes.io/part-of: eump
+spec:
+  # The frontend is completely stateless (Nginx serving compiled Angular 19 SPA)
+  # and can be horizontally scaled safely across multiple replicas.
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: enterprise-user-management-platform
+      app.kubernetes.io/component: frontend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: enterprise-user-management-platform
+        app.kubernetes.io/component: frontend
+        app.kubernetes.io/part-of: eump
+    spec:
+      containers:
+        - name: frontend
+          image: enterpriseusermanagementplatform-frontend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+              name: http
+              protocol: TCP
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "250m"
+              memory: "256Mi"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+

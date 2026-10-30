@@ -1,0 +1,19 @@
+# Persistent Volume Claim for Physical JSON Data Store
+# In modern Kubernetes clusters (Docker Desktop, AKS, GKE, EKS, Minikube),
+# omitting storageClassName automatically leverages the default dynamic StorageClass.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: eump-storage-pvc
+  namespace: eump
+  labels:
+    app.kubernetes.io/name: enterprise-user-management-platform
+    app.kubernetes.io/component: storage
+    app.kubernetes.io/part-of: eump
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+
