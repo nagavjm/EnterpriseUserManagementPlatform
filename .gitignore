@@ -1,0 +1,42 @@
+## Visual Studio / .NET Core
+*.user
+*.userosscache
+*.suo
+*.userprefs
+[Bb]in/
+[Oo]bj/
+**/bin/
+**/obj/
+.vs/
+*.lock.json
+project.lock.json
+*.nuget.props
+*.nuget.targets
+
+## Visual Studio Code
+.vscode/*
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+## Node.js / Angular
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+.angular/
+**/.angular/
+.editorconfig
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+## JSON Data persistence (Docker/Kubernetes persistent mount in production)
+**/data/users.json
+**/data/users.temp.json
+
+## OS generated files
+.DS_Store
+Thumbs.db
