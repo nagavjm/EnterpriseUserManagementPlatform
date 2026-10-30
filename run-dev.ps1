@@ -4,7 +4,7 @@
 
 .DESCRIPTION
     Launches:
-    - Backend API at http://localhost:5100 (Swagger: http://localhost:5100/swagger)
+    - Backend API at http://localhost:5100 (API Docs: http://localhost:5100/swagger or /scalar/v1)
     - Angular Frontend at http://localhost:4200
 #>
 
@@ -22,6 +22,6 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", "& { Write-Host '-
 
 Write-Host ""
 Write-Host "Both processes launched in dedicated terminal windows." -ForegroundColor Cyan
-Write-Host "Swagger UI:  http://localhost:5100/swagger" -ForegroundColor White
-Write-Host "Frontend UI: http://localhost:4200" -ForegroundColor White
+Write-Host "Interactive API Docs: http://localhost:5100/swagger (or /scalar/v1)" -ForegroundColor White
+Write-Host "Frontend UI:          http://localhost:4200" -ForegroundColor White
 Write-Host "==========================================================" -ForegroundColor Cyan

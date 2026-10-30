@@ -18,35 +18,14 @@
       }
     },
     {
-      "label": "run-backend",
-      "command": "dotnet",
-      "type": "process",
-      "args": [
-        "run",
-        "--project",
-        "${workspaceFolder}/backend/src/EnterpriseUserManagement.Api/EnterpriseUserManagement.Api.csproj",
-        "--launch-profile",
-        "http"
-      ],
-      "isBackground": true,
-      "problemMatcher": {
-        "pattern": {
-          "regexp": "^$"
-        },
-        "background": {
-          "activeOnStart": true,
-          "beginsPattern": "^.*Now listening on.*$",
-          "endsPattern": "^.*Now listening on.*$"
-        }
-      }
-    },
-    {
       "label": "start-frontend",
       "type": "npm",
       "script": "start",
       "path": "frontend/enterprise-user-management-ui",
       "isBackground": true,
       "problemMatcher": {
+        "owner": "typescript",
+        "fileLocation": "relative",
         "pattern": {
           "regexp": "^$"
         },
@@ -59,4 +38,3 @@
     }
   ]
 }
-

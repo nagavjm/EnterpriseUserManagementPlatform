@@ -71,3 +71,4 @@ npm start
 - [ ] **Phase 5: Docker Containerization** - Multi-stage Dockerfiles & Docker Compose with persistent volume mount.
 - [ ] **Phase 6: Kubernetes Deployment** - Manifests, PVC, ConfigMap, Deployment, Service, and Ingress.
 - [ ] **Phase 7: CI/CD** - Automated GitHub Actions workflow.
+
