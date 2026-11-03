@@ -10,6 +10,11 @@ spec:
   # The frontend is completely stateless (Nginx serving compiled Angular 19 SPA)
   # and can be horizontally scaled safely across multiple replicas.
   replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0 # Guarantees zero downtime by keeping minimum 2 healthy pods during rollout
   selector:
     matchLabels:
       app.kubernetes.io/name: enterprise-user-management-platform
