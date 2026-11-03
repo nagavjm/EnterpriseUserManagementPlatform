@@ -279,6 +279,11 @@ stages:
                           -e "s|maxReplicas:\s*8|maxReplicas: 4|g" \
                         "$MANIFEST_DIR/09-frontend-hpa.yaml" | kubectl apply -f - -n $TARGET_NS
 
+                      echo "14. Applying Backend Horizontal Pod Autoscaler (min: 1, max: 4 for Dev)..."
+                      sed -e "s|minReplicas:\s*2|minReplicas: 1|g" \
+                          -e "s|maxReplicas:\s*8|maxReplicas: 4|g" \
+                        "$MANIFEST_DIR/10-backend-hpa.yaml" | kubectl apply -f - -n $TARGET_NS
+
                       echo "Waiting for Dev Backend rollout..."
                       if ! kubectl rollout status deployment/backend-deployment -n $TARGET_NS --timeout=180s; then
                         echo "##[error]Backend deployment rollout failed or timed out! Gathering diagnostics..."
@@ -418,6 +423,9 @@ stages:
 
                       echo "13. Applying Frontend Horizontal Pod Autoscaler (min: 2, max: 8 for Prod)..."
                       kubectl apply -f "$MANIFEST_DIR/09-frontend-hpa.yaml" -n $TARGET_NS
+
+                      echo "14. Applying Backend Horizontal Pod Autoscaler (min: 2, max: 8 for Prod)..."
+                      kubectl apply -f "$MANIFEST_DIR/10-backend-hpa.yaml" -n $TARGET_NS
 
                       echo "Waiting for Production Backend rollout..."
                       if ! kubectl rollout status deployment/backend-deployment -n $TARGET_NS --timeout=180s; then
