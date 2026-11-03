@@ -186,7 +186,7 @@ graph TD
 | **Data Storage** | Docker Named Volume (`eump-data`) | PersistentVolumeClaim (`eump-storage-pvc`) |
 | **Self-Healing** | `restart: unless-stopped` | Liveness/Readiness probes + automatic pod rescheduling |
 | **Frontend Scaling** | Manual (`docker compose up --scale frontend=2`) | Native `replicas: 2` or Horizontal Pod Autoscaler (HPA) |
-| **How to run** | `docker compose up -d` | `.\kubernetes\k8s-deploy.ps1 -Action Apply` |
+| **How to run** | `docker compose up -d` | `kubectl apply -f ./kubernetes/` |
 
 ---
 
@@ -210,10 +210,10 @@ docker exec -it eump-backend cat /app/data/users.json
 docker compose down
 ```
 
-### Kubernetes (Docker Desktop / Minikube)
+### Kubernetes
 ```powershell
 # 1. Deploy all manifests
-.\kubernetes\k8s-deploy.ps1 -Action Apply
+kubectl apply -f ./kubernetes/
 
 # 2. View all pods, services, and storage claims
 kubectl get all,pvc -n eump
@@ -225,6 +225,6 @@ kubectl logs -l app.kubernetes.io/component=backend -n eump
 kubectl logs -l app.kubernetes.io/component=frontend -n eump
 
 # 5. Teardown
-.\kubernetes\k8s-deploy.ps1 -Action Delete
+kubectl delete -f ./kubernetes/
 ```
 

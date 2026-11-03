@@ -5,6 +5,7 @@ using EnterpriseUserManagement.Application;
 using EnterpriseUserManagement.Application.Interfaces;
 using EnterpriseUserManagement.Infrastructure;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Scalar.AspNetCore;
 
@@ -18,18 +19,23 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
     });
 
-// 2. Add CORS for Angular frontend
+// 2. Add CORS for Angular frontend and cloud deployments
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAngularDev", policy =>
     {
-        policy.WithOrigins(
-                  "http://localhost:4200", 
-                  "http://127.0.0.1:4200", 
-                  "https://localhost:4200")
+        policy.AllowAnyOrigin()
               .AllowAnyHeader()
               .AllowAnyMethod();
     });
+});
+
+// Configure Forwarded Headers for reverse proxies, Azure Ingress, and Kubernetes Service routing
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
 });
 
 // 3. Register Application & Infrastructure Clean Architecture layers
@@ -45,11 +51,16 @@ builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
+// Enable Forwarded Headers first
+app.UseForwardedHeaders();
+
 // 6. Global Exception Handling Middleware (must be first in the pipeline)
 app.UseGlobalExceptionHandling();
 
 // 7. Interactive API Documentation (Scalar / Swagger)
-if (app.Environment.IsDevelopment())
+// Enabled in Development or when explicitly enabled via configuration (e.g. Kubernetes ConfigMap)
+var enableSwagger = app.Environment.IsDevelopment() || builder.Configuration.GetValue<bool>("EnableSwagger", true);
+if (enableSwagger)
 {
     app.MapOpenApi();
     app.MapScalarApiReference(options =>
@@ -84,7 +95,9 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
 
 app.UseCors("AllowAngularDev");
 
-if (!app.Environment.IsDevelopment())
+// In containerized/Kubernetes environments (like AKS), TLS termination occurs at the Ingress controller
+// or Azure Load Balancer. Only enforce internal HTTPS redirection if explicitly enabled.
+if (builder.Configuration.GetValue<bool>("EnableHttpsRedirection", false))
 {
     app.UseHttpsRedirection();
 }

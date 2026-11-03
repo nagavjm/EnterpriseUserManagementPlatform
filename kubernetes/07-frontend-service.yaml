@@ -7,9 +7,12 @@ metadata:
     app.kubernetes.io/name: enterprise-user-management-platform
     app.kubernetes.io/component: frontend
     app.kubernetes.io/part-of: eump
+  annotations:
+    # Azure Load Balancer settings (uncomment if you wish to assign a DNS name or internal LB)
+    # service.beta.kubernetes.io/azure-dns-label-name: "eump-demo"
+    service.beta.kubernetes.io/azure-load-balancer-tcp-idle-timeout: "4"
 spec:
-  # Using LoadBalancer allows direct local access in Docker Desktop (localhost:80),
-  # Minikube (minikube tunnel), or cloud providers (AWS ELB / GCP Cloud LB / Azure LB).
+  # In AKS, LoadBalancer automatically provisions an Azure Public Load Balancer and Public IP address.
   type: LoadBalancer
   selector:
     app.kubernetes.io/name: enterprise-user-management-platform
@@ -18,6 +21,5 @@ spec:
     - name: http
       port: 80
       targetPort: 80
-      nodePort: 30080
       protocol: TCP
 

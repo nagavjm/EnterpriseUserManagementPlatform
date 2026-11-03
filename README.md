@@ -62,13 +62,38 @@ npm start
 
 ---
 
-## 4. Development Roadmap
+## 4. Azure Kubernetes Service (AKS) Deployment
+
+EUMP includes production deployment support for **Azure Kubernetes Service (AKS)** and **Azure Container Registry (ACR)**:
+
+1. **Detailed Azure Portal Guide**: See [docs/aks-deployment-guide.md](docs/aks-deployment-guide.md) for step-by-step instructions on creating Resource Groups, ACR, and AKS clusters.
+2. **Automated CI/CD Deployment**: Deployed continuously via Azure DevOps pipelines (`azure-pipelines.yml`).
+3. **Manual CLI Deployment**:
+```powershell
+az aks get-credentials --resource-group "rg-eump" --name "aks-eump"
+kubectl apply -f ./kubernetes/
+```
+
+---
+
+## 5. Azure DevOps CI/CD Pipeline
+
+EUMP includes an **industry-standard multi-stage Azure DevOps pipeline** (`azure-pipelines.yml`):
+
+- **Automated CI Validation**: Runs parallel .NET 9 unit/integration tests with Cobertura code coverage and Angular 19 compilation checks.
+- **Immutable Container Builds**: Multi-stage Docker builds tagged with `$(Build.BuildId)` and pushed to Azure Container Registry (ACR).
+- **Automated CD to AKS**: Deploys to AKS using Azure DevOps Environments (`eump-production`) with automated rollout validation and optional approval gates.
+- **Detailed Setup Guide**: See [docs/azure-devops-cicd-guide.md](docs/azure-devops-cicd-guide.md) for step-by-step instructions on setting up service connections, approvals, and branch policies.
+
+---
+
+## 6. Development Roadmap
 
 - [x] **Phase 1: Solution Setup** - Scaffolding Clean Architecture projects, Angular SPA, launch profiles, and build verification.
-- [ ] **Phase 2: Backend Development** - Domain entity, DTOs, JSON persistence engine, services, REST controllers, health checks.
-- [ ] **Phase 3: Frontend Development** - Dashboard, user tables, search/filters, reactive forms, status toggles.
-- [ ] **Phase 4: Testing & Quality** - Unit tests & ASP.NET Core integration tests.
-- [ ] **Phase 5: Docker Containerization** - Multi-stage Dockerfiles & Docker Compose with persistent volume mount.
-- [ ] **Phase 6: Kubernetes Deployment** - Manifests, PVC, ConfigMap, Deployment, Service, and Ingress.
-- [ ] **Phase 7: CI/CD** - Automated GitHub Actions workflow.
+- [x] **Phase 2: Backend Development** - Domain entity, DTOs, JSON persistence engine, services, REST controllers, health checks.
+- [x] **Phase 3: Frontend Development** - Dashboard, user tables, search/filters, reactive forms, status toggles.
+- [x] **Phase 4: Testing & Quality** - Unit tests & ASP.NET Core integration tests.
+- [x] **Phase 5: Docker Containerization** - Multi-stage Dockerfiles & Docker Compose with persistent volume mount.
+- [x] **Phase 6: Kubernetes & AKS Deployment** - Manifests, PVC, ConfigMap, Deployment, Service, Ingress, and AKS security context.
+- [x] **Phase 7: CI/CD** - Automated Azure DevOps multi-stage pipeline with test reporting and AKS deployment.
 

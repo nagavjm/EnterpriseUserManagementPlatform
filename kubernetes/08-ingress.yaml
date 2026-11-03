@@ -7,11 +7,18 @@ metadata:
     app.kubernetes.io/name: enterprise-user-management-platform
     app.kubernetes.io/part-of: eump
   annotations:
-    kubernetes.io/ingress.class: nginx
     nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    # For Azure Application Gateway Ingress Controller (AGIC), use:
+    # kubernetes.io/ingress.class: azure/application-gateway
+    # appgw.ingress.kubernetes.io/ssl-redirect: "true"
 spec:
+  # Supported ingress classes on AKS:
+  # - 'nginx' (community ingress-nginx)
+  # - 'webapprouting.kubernetes.azure.com' (AKS Web App Routing add-on)
+  # - 'azure-application-gateway' (AGIC)
+  ingressClassName: nginx
   rules:
-    - host: eump.local
+    - host: eump.local # In AKS: change to your custom domain (e.g. eump.yourdomain.com) or omit 'host' for IP-based routing
       http:
         paths:
           - path: /api

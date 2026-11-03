@@ -9,6 +9,9 @@ metadata:
 data:
   ASPNETCORE_ENVIRONMENT: "Production"
   ASPNETCORE_URLS: "http://+:5100"
+  ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+  EnableSwagger: "true"
+  EnableHttpsRedirection: "false"
   JsonStorage__StorageDirectory: "/app/data"
   JsonStorage__FileName: "users.json"
 

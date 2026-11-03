@@ -24,7 +24,9 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: enterpriseusermanagementplatform-frontend:latest
+          # For AKS, tag and push to your Azure Container Registry: <acrName>.azurecr.io/eump-frontend:latest
+          # Azure DevOps CI/CD pipeline dynamically injects $(acrLoginServer)/eump-frontend:$(Build.BuildId).
+          image: eump-frontend:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 80

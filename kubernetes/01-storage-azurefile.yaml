@@ -1,0 +1,23 @@
+# Optional Alternative: Persistent Volume Claim backed by Azure Files (azurefile-csi)
+# Use this manifest instead of 01-storage.yaml if you prefer Azure Files.
+# Azure Files benefits:
+#   - Supports ReadWriteMany (RWX)
+#   - Eliminates Azure Disk node-detachment delays during pod restarts or rescheduling
+#   - Easily browsable directly in Azure Portal Storage Accounts
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: eump-storage-pvc
+  namespace: eump
+  labels:
+    app.kubernetes.io/name: enterprise-user-management-platform
+    app.kubernetes.io/component: storage
+    app.kubernetes.io/part-of: eump
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: azurefile-csi
+  resources:
+    requests:
+      storage: 5Gi
+

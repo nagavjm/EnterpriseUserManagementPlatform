@@ -61,9 +61,8 @@ All declarative manifests reside in the [`kubernetes/`](file:///c:/Users/Nagaraj
 | [`04-backend-deployment.yaml`](file:///c:/Users/Nagarajan/source/repos/EnterpriseUserManagementPlatform/kubernetes/04-backend-deployment.yaml) | `Deployment` | Runs the .NET 9 API with `replicas: 1`, PVC mount, and health probes. |
 | [`05-backend-service.yaml`](file:///c:/Users/Nagarajan/source/repos/EnterpriseUserManagementPlatform/kubernetes/05-backend-service.yaml) | `Service` | Internal `ClusterIP` named `backend` (resolvable via CoreDNS). |
 | [`06-frontend-deployment.yaml`](file:///c:/Users/Nagarajan/source/repos/EnterpriseUserManagementPlatform/kubernetes/06-frontend-deployment.yaml) | `Deployment` | Runs the Nginx + Angular 19 SPA with `replicas: 2`. |
-| [`07-frontend-service.yaml`](file:///c:/Users/Nagarajan/source/repos/EnterpriseUserManagementPlatform/kubernetes/07-frontend-service.yaml) | `Service` | Exposes frontend externally via `LoadBalancer` / `NodePort` (30080). |
+| [`07-frontend-service.yaml`](file:///c:/Users/Nagarajan/source/repos/EnterpriseUserManagementPlatform/kubernetes/07-frontend-service.yaml) | `Service` | Exposes frontend externally via `LoadBalancer`. |
 | [`08-ingress.yaml`](file:///c:/Users/Nagarajan/source/repos/EnterpriseUserManagementPlatform/kubernetes/08-ingress.yaml) | `Ingress` | Path-based routing rules for standard ingress controllers. |
-| [`k8s-deploy.ps1`](file:///c:/Users/Nagarajan/source/repos/EnterpriseUserManagementPlatform/kubernetes/k8s-deploy.ps1) | PowerShell Script | One-click automation to Apply, Check Status, or Delete resources. |
 
 ---
 
@@ -98,19 +97,8 @@ Even with `replicas: 1`, high availability is preserved:
 
 ## 5. Deployment Instructions
 
-### Option 1: Using the PowerShell Helper Script
-```powershell
-# Deploy all resources
-.\kubernetes\k8s-deploy.ps1 -Action Apply
+Deploy manifests directly using standard `kubectl` commands or automatically via [Azure DevOps CI/CD](azure-devops-cicd-guide.md):
 
-# Check live pod and service status
-.\kubernetes\k8s-deploy.ps1 -Action Status
-
-# Clean up resources
-.\kubernetes\k8s-deploy.ps1 -Action Delete
-```
-
-### Option 2: Standard `kubectl` Commands
 ```powershell
 # 1. Apply namespace
 kubectl apply -f kubernetes/00-namespace.yaml

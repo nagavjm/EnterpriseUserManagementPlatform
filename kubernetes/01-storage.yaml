@@ -1,6 +1,9 @@
 # Persistent Volume Claim for Physical JSON Data Store
-# In modern Kubernetes clusters (Docker Desktop, AKS, GKE, EKS, Minikube),
-# omitting storageClassName automatically leverages the default dynamic StorageClass.
+# In Azure Kubernetes Service (AKS):
+#   - Default storage class is 'managed-csi' (Azure Managed Disk, ReadWriteOnce).
+#   - Minimum recommended disk size for Azure Managed Disks is 5Gi.
+#   - For shared multi-pod or instant node-failover storage, 'azurefile-csi' can also be used.
+# Omitting storageClassName leverages AKS's default dynamic StorageClass ('managed-csi').
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -15,5 +18,5 @@ spec:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 1Gi
+      storage: 5Gi
 

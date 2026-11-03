@@ -4,6 +4,24 @@
     "secure": false,
     "changeOrigin": true,
     "logLevel": "debug"
+  },
+  "/swagger": {
+    "target": "http://localhost:5100",
+    "secure": false,
+    "changeOrigin": true,
+    "logLevel": "debug"
+  },
+  "/scalar": {
+    "target": "http://localhost:5100",
+    "secure": false,
+    "changeOrigin": true,
+    "logLevel": "debug"
+  },
+  "/openapi": {
+    "target": "http://localhost:5100",
+    "secure": false,
+    "changeOrigin": true,
+    "logLevel": "debug"
   }
 }
 

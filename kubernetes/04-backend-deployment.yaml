@@ -27,9 +27,17 @@ spec:
         app.kubernetes.io/component: backend
         app.kubernetes.io/part-of: eump
     spec:
+      # AKS Security Context: Azure Disks/Files attach as root by default.
+      # Setting fsGroup to 1654 gives the non-root ASP.NET Core process ($APP_UID 1654)
+      # full read/write permissions to /app/data without permission errors.
+      securityContext:
+        fsGroup: 1654
+        fsGroupChangePolicy: "OnRootMismatch"
       containers:
         - name: backend
-          image: enterpriseusermanagementplatform-backend:latest
+          # For AKS, tag and push to your Azure Container Registry: <acrName>.azurecr.io/eump-backend:latest
+          # Azure DevOps CI/CD pipeline dynamically injects $(acrLoginServer)/eump-backend:$(Build.BuildId).
+          image: eump-backend:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 5100
@@ -55,7 +63,7 @@ spec:
             httpGet:
               path: /health
               port: 5100
-            initialDelaySeconds: 15
+            initialDelaySeconds: 20
             periodSeconds: 20
             timeoutSeconds: 5
             failureThreshold: 3
@@ -64,7 +72,7 @@ spec:
             httpGet:
               path: /health/ready
               port: 5100
-            initialDelaySeconds: 5
+            initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 3

@@ -1,0 +1,234 @@
+# ===============================================================================
+# Azure DevOps CI/CD Pipeline - Enterprise User Management Platform (EUMP)
+# Target: Azure Kubernetes Service (AKS) & Azure Container Registry (ACR)
+# Standards: Multi-stage, Immutable Build IDs, Automated Quality Gates, Environments
+# ===============================================================================
+
+name: $(Date:yyyyMMdd)$(Rev:.r)
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    exclude:
+      - README.md
+      - docs/**
+      - .vscode/**
+      - .gitignore
+
+pr:
+  branches:
+    include:
+      - main
+
+variables:
+  # ---------------------------------------------------------------------------
+  # Azure DevOps Service Connection & Azure Resources Configuration
+  # Update these values or configure them via Azure DevOps Variable Groups
+  # ---------------------------------------------------------------------------
+  azureServiceConnection: 'azure-rm-connection' # ARM Service Connection name in Azure DevOps
+  azureResourceGroup: 'rg-eump'                 # Azure Resource Group
+  aksClusterName: 'aks-eump'                    # AKS Cluster name
+  acrName: 'acreump'                            # Azure Container Registry name (without .azurecr.io)
+  acrLoginServer: '$(acrName).azurecr.io'       # e.g., acreump.azurecr.io
+  k8sNamespace: 'eump'
+
+  # Build Configuration
+  buildConfiguration: 'Release'
+  dotnetVersion: '9.0.x'
+  nodeVersion: '20.x'
+  tag: '$(Build.BuildId)'                       # Immutable unique image tag per build
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+# ===============================================================================
+# STAGE 1: CONTINUOUS INTEGRATION (CI)
+# - Parallel Backend (.NET 9) and Frontend (Angular 19) Validation
+# - Code Quality & Unit/Integration Tests Reporting
+# - Docker Container Build & Push to ACR
+# - Publish Manifest Artifacts
+# ===============================================================================
+stages:
+  - stage: BuildAndTest
+    displayName: 'CI: Build, Test & Containerize'
+    jobs:
+      # -------------------------------------------------------------------------
+      # Job 1: .NET 9 Backend Build & Automated Test Execution
+      # -------------------------------------------------------------------------
+      - job: Backend_CI
+        displayName: 'Backend Build & Unit/Integration Tests'
+        steps:
+          - task: UseDotNet@2
+            displayName: 'Install .NET Core SDK $(dotnetVersion)'
+            inputs:
+              packageType: 'sdk'
+              version: '$(dotnetVersion)'
+
+          - task: DotNetCoreCLI@2
+            displayName: 'Restore NuGet Packages'
+            inputs:
+              command: 'restore'
+              projects: 'backend/EnterpriseUserManagement.sln'
+
+          - task: DotNetCoreCLI@2
+            displayName: 'Build Solution ($(buildConfiguration))'
+            inputs:
+              command: 'build'
+              projects: 'backend/EnterpriseUserManagement.sln'
+              arguments: '--configuration $(buildConfiguration) --no-restore'
+
+          - task: DotNetCoreCLI@2
+            displayName: 'Execute Automated Tests & Collect Coverage'
+            inputs:
+              command: 'test'
+              projects: 'backend/EnterpriseUserManagement.sln'
+              arguments: '--configuration $(buildConfiguration) --no-build --logger trx --collect:"XPlat Code Coverage"'
+              publishTestResults: true
+
+          - task: PublishCodeCoverageResults@2
+            displayName: 'Publish Code Coverage Results'
+            inputs:
+              summaryFileLocation: '$(Agent.TempDirectory)/**/coverage.cobertura.xml'
+            condition: succeededOrFailed()
+
+      # -------------------------------------------------------------------------
+      # Job 2: Angular 19 Frontend Build & Verification
+      # -------------------------------------------------------------------------
+      - job: Frontend_CI
+        displayName: 'Frontend Compile & Bundle Verification'
+        steps:
+          - task: NodeTool@0
+            displayName: 'Install Node.js $(nodeVersion)'
+            inputs:
+              versionSpec: '$(nodeVersion)'
+
+          - script: |
+              npm ci
+            displayName: 'Install Node Dependencies'
+            workingDirectory: 'frontend/enterprise-user-management-ui'
+
+          - script: |
+              npm run build -- --configuration production
+            displayName: 'Compile Angular Production Bundle'
+            workingDirectory: 'frontend/enterprise-user-management-ui'
+
+      # -------------------------------------------------------------------------
+      # Job 3: Docker Images Build & Push to Azure Container Registry (ACR)
+      # Runs only on push/merge to main after all quality tests pass
+      # -------------------------------------------------------------------------
+      - job: Container_Build_And_Push
+        displayName: 'Build & Push Docker Images to ACR'
+        dependsOn: [Backend_CI, Frontend_CI]
+        condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
+        steps:
+          - task: AzureCLI@2
+            displayName: 'Build & Push Images to ACR'
+            inputs:
+              azureSubscription: '$(azureServiceConnection)'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                set -e
+                echo "Authenticating Docker to ACR: $(acrName)..."
+                az acr login --name $(acrName)
+
+                echo "Building Backend Container Image..."
+                docker build -t $(acrLoginServer)/eump-backend:$(tag) \
+                             -t $(acrLoginServer)/eump-backend:latest \
+                             -f backend/Dockerfile backend
+
+                echo "Pushing Backend Container Image..."
+                docker push $(acrLoginServer)/eump-backend:$(tag)
+                docker push $(acrLoginServer)/eump-backend:latest
+
+                echo "Building Frontend Container Image..."
+                docker build -t $(acrLoginServer)/eump-frontend:$(tag) \
+                             -t $(acrLoginServer)/eump-frontend:latest \
+                             -f frontend/enterprise-user-management-ui/Dockerfile frontend/enterprise-user-management-ui
+
+                echo "Pushing Frontend Container Image..."
+                docker push $(acrLoginServer)/eump-frontend:$(tag)
+                docker push $(acrLoginServer)/eump-frontend:latest
+
+                echo "Container images pushed successfully with immutable tag $(tag) and latest."
+
+          - task: PublishPipelineArtifact@1
+            displayName: 'Publish Kubernetes Manifests Artifact'
+            inputs:
+              targetPath: '$(Build.SourcesDirectory)/kubernetes'
+              artifact: 'manifests'
+
+# ===============================================================================
+# STAGE 2: CONTINUOUS DELIVERY (CD)
+# - Deploys to AKS using Azure DevOps Environment tracking
+# - Injects immutable build tags into deployment manifests
+# - Validates pod rollouts and reports public load balancer status
+# ===============================================================================
+  - stage: DeployToAKS
+    displayName: 'CD: Deploy to Azure Kubernetes Service'
+    dependsOn: BuildAndTest
+    condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
+    jobs:
+      - deployment: DeployProduction
+        displayName: 'Deploy to Production AKS Cluster'
+        environment: 'eump-production'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - download: current
+                  artifact: 'manifests'
+                  displayName: 'Download Kubernetes Manifests'
+
+                - task: AzureCLI@2
+                  displayName: 'Connect to AKS & Apply Manifests'
+                  inputs:
+                    azureSubscription: '$(azureServiceConnection)'
+                    scriptType: 'bash'
+                    scriptLocation: 'inlineScript'
+                    inlineScript: |
+                      set -e
+                      MANIFEST_DIR="$(Pipeline.Workspace)/manifests"
+
+                      echo "Fetching AKS Credentials for cluster $(aksClusterName)..."
+                      az aks get-credentials --resource-group $(azureResourceGroup) --name $(aksClusterName) --overwrite-existing
+
+                      echo "1. Applying Namespace..."
+                      kubectl apply -f "$MANIFEST_DIR/00-namespace.yaml"
+
+                      echo "2. Applying Persistent Storage Claim..."
+                      kubectl apply -f "$MANIFEST_DIR/01-storage.yaml"
+
+                      echo "3. Applying ConfigMap & Secret..."
+                      kubectl apply -f "$MANIFEST_DIR/02-configmap.yaml"
+                      kubectl apply -f "$MANIFEST_DIR/03-secret.yaml"
+
+                      echo "4. Deploying Backend with image $(acrLoginServer)/eump-backend:$(tag)..."
+                      sed "s|image:\s*eump-backend:latest|image: $(acrLoginServer)/eump-backend:$(tag)|g" \
+                        "$MANIFEST_DIR/04-backend-deployment.yaml" | kubectl apply -f -
+
+                      echo "5. Applying Backend ClusterIP Service..."
+                      kubectl apply -f "$MANIFEST_DIR/05-backend-service.yaml"
+
+                      echo "6. Deploying Frontend with image $(acrLoginServer)/eump-frontend:$(tag)..."
+                      sed "s|image:\s*eump-frontend:latest|image: $(acrLoginServer)/eump-frontend:$(tag)|g" \
+                        "$MANIFEST_DIR/06-frontend-deployment.yaml" | kubectl apply -f -
+
+                      echo "7. Applying Frontend LoadBalancer Service..."
+                      kubectl apply -f "$MANIFEST_DIR/07-frontend-service.yaml"
+
+                      echo "8. Applying Ingress..."
+                      kubectl apply -f "$MANIFEST_DIR/08-ingress.yaml"
+
+                      echo "Waiting for Backend rollout to complete..."
+                      kubectl rollout status deployment/backend-deployment -n $(k8sNamespace) --timeout=180s
+
+                      echo "Waiting for Frontend rollout to complete..."
+                      kubectl rollout status deployment/frontend-deployment -n $(k8sNamespace) --timeout=180s
+
+                      echo "Deployment complete! Fetching Azure Public IP..."
+                      kubectl get svc frontend -n $(k8sNamespace)
+                      kubectl get pods -n $(k8sNamespace) -o wide
+
