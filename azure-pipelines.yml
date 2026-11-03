@@ -27,8 +27,8 @@ variables:
   # Azure DevOps Service Connection & Azure Resources Configuration
   # ---------------------------------------------------------------------------
   azureServiceConnection: 'azure-rm-connection' # ARM Service Connection name in Azure DevOps
-  acrName: 'acreump'                            # Azure Container Registry name (without .azurecr.io)
-  acrLoginServer: '$(acrName).azurecr.io'       # e.g., acreump.azurecr.io
+  acrName: 'acreump1001'                        # Azure Container Registry name (without .azurecr.io)
+  acrLoginServer: '$(acrName).azurecr.io'       # e.g., acreump1001.azurecr.io
 
   # Dev Environment Target Settings
   devResourceGroup: 'rg-eump'                   # Dev Azure Resource Group
