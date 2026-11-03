@@ -29,7 +29,7 @@ variables:
   azureServiceConnection: 'azure-rm-connection' # ARM Service Connection name in Azure DevOps
   acrName: 'acreump1001'                        # Azure Container Registry name (without .azurecr.io)
   acrLoginServer: '$(acrName).azurecr.io'       # e.g., acreump1001.azurecr.io
-  keyVaultName: 'kv-eump-1001'                  # Azure Key Vault name storing SqlConnectionString
+  keyVaultName: 'kv-eump-nagarajan'             # Azure Key Vault name storing SqlConnectionString
 
   # Dev Environment Target Settings
   devResourceGroup: 'rg-eump'                   # Dev Azure Resource Group
@@ -205,7 +205,20 @@ stages:
                       echo "1. Ensuring Namespace $TARGET_NS exists..."
                       kubectl create namespace $TARGET_NS --dry-run=client -o yaml | kubectl apply -f -
 
-                      echo "2. Applying Dev ConfigMap, SecretProviderClass & Secret..."
+                      echo "2. Checking Azure Key Vault Secrets Provider add-on on AKS..."
+                      if ! kubectl get crd secretproviderclasses.secrets-store.csi.x-k8s.io >/dev/null 2>&1; then
+                        echo "Secrets Store CSI Driver CRD not found. Enabling addon on AKS..."
+                        az aks enable-addons --addons azure-keyvault-secrets-provider --name $(devAksCluster) --resource-group $(devResourceGroup)
+                      fi
+
+                      echo "3. Ensuring AKS Kubelet Identity has Key Vault Secrets User permissions..."
+                      KUBELET_CLIENT_ID=$(az aks show --resource-group $(devResourceGroup) --name $(devAksCluster) --query "identityProfile.kubeletidentity.clientId" -o tsv 2>/dev/null || true)
+                      KV_ID=$(az keyvault show --name $(keyVaultName) --resource-group $(devResourceGroup) --query id -o tsv 2>/dev/null || true)
+                      if [ -n "$KUBELET_CLIENT_ID" ] && [ -n "$KV_ID" ]; then
+                        az role assignment create --role "Key Vault Secrets User" --assignee "$KUBELET_CLIENT_ID" --scope "$KV_ID" 2>/dev/null || true
+                      fi
+
+                      echo "4. Applying Dev ConfigMap, SecretProviderClass & Secret..."
                       kubectl apply -f "$MANIFEST_DIR/02-configmap-dev.yaml" -n $TARGET_NS
                       TENANT_ID=$(az account show --query tenantId -o tsv)
                       sed -e "s|keyvaultName:\s*\"[^\"]*\"|keyvaultName: \"$(keyVaultName)\"|g" \
@@ -284,7 +297,20 @@ stages:
                       echo "1. Ensuring Namespace $TARGET_NS exists..."
                       kubectl create namespace $TARGET_NS --dry-run=client -o yaml | kubectl apply -f -
 
-                      echo "2. Applying Production ConfigMap, SecretProviderClass & Secret..."
+                      echo "2. Checking Azure Key Vault Secrets Provider add-on on AKS..."
+                      if ! kubectl get crd secretproviderclasses.secrets-store.csi.x-k8s.io >/dev/null 2>&1; then
+                        echo "Secrets Store CSI Driver CRD not found. Enabling addon on AKS..."
+                        az aks enable-addons --addons azure-keyvault-secrets-provider --name $(prodAksCluster) --resource-group $(prodResourceGroup)
+                      fi
+
+                      echo "3. Ensuring AKS Kubelet Identity has Key Vault Secrets User permissions..."
+                      KUBELET_CLIENT_ID=$(az aks show --resource-group $(prodResourceGroup) --name $(prodAksCluster) --query "identityProfile.kubeletidentity.clientId" -o tsv 2>/dev/null || true)
+                      KV_ID=$(az keyvault show --name $(keyVaultName) --resource-group $(prodResourceGroup) --query id -o tsv 2>/dev/null || true)
+                      if [ -n "$KUBELET_CLIENT_ID" ] && [ -n "$KV_ID" ]; then
+                        az role assignment create --role "Key Vault Secrets User" --assignee "$KUBELET_CLIENT_ID" --scope "$KV_ID" 2>/dev/null || true
+                      fi
+
+                      echo "4. Applying Production ConfigMap, SecretProviderClass & Secret..."
                       kubectl apply -f "$MANIFEST_DIR/02-configmap-prod.yaml" -n $TARGET_NS
                       TENANT_ID=$(az account show --query tenantId -o tsv)
                       sed -e "s|keyvaultName:\s*\"[^\"]*\"|keyvaultName: \"$(keyVaultName)\"|g" \
