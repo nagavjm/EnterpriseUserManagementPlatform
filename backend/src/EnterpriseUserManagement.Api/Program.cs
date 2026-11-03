@@ -117,7 +117,11 @@ using (var scope = app.Services.CreateScope())
         if (dbContext.Database.IsRelational())
         {
             logger.LogInformation("Applying EF Core migrations to Azure SQL database...");
-            await dbContext.Database.MigrateAsync();
+            var strategy = dbContext.Database.CreateExecutionStrategy();
+            await strategy.ExecuteAsync(async () =>
+            {
+                await dbContext.Database.MigrateAsync();
+            });
             logger.LogInformation("Database migrations applied successfully.");
         }
         else
