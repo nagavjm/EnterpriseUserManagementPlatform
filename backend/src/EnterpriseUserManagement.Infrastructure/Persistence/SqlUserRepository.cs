@@ -3,37 +3,39 @@ using EnterpriseUserManagement.Application.DTOs;
 using EnterpriseUserManagement.Application.Interfaces;
 using EnterpriseUserManagement.Domain.Entities;
 using EnterpriseUserManagement.Domain.Exceptions;
+using EnterpriseUserManagement.Infrastructure.Data;
+using Microsoft.EntityFrameworkCore;
 
 namespace EnterpriseUserManagement.Infrastructure.Persistence;
 
-public class JsonUserRepository : IUserRepository
+public class SqlUserRepository : IUserRepository
 {
-    private readonly IJsonStorageService _storageService;
+    private readonly ApplicationDbContext _context;
 
-    public JsonUserRepository(IJsonStorageService storageService)
+    public SqlUserRepository(ApplicationDbContext context)
     {
-        _storageService = storageService;
+        _context = context;
     }
 
     public async Task<IReadOnlyList<User>> GetAllAsync(CancellationToken cancellationToken = default)
     {
-        var users = await _storageService.ReadUsersAsync(cancellationToken);
-        return users.AsReadOnly();
+        return await _context.Users
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
     }
 
     public async Task<PagedResult<User>> GetPagedAsync(UserQueryParameters parameters, CancellationToken cancellationToken = default)
     {
-        var users = await _storageService.ReadUsersAsync(cancellationToken);
-        var query = users.AsQueryable();
+        var query = _context.Users.AsNoTracking().AsQueryable();
 
         // 1. Text Search across FirstName, LastName, and Email
         if (!string.IsNullOrWhiteSpace(parameters.SearchTerm))
         {
-            var term = parameters.SearchTerm.Trim().ToLowerInvariant();
+            var term = parameters.SearchTerm.Trim().ToLower();
             query = query.Where(u =>
-                u.FirstName.ToLowerInvariant().Contains(term) ||
-                u.LastName.ToLowerInvariant().Contains(term) ||
-                u.Email.ToLowerInvariant().Contains(term));
+                u.FirstName.ToLower().Contains(term) ||
+                u.LastName.ToLower().Contains(term) ||
+                u.Email.ToLower().Contains(term));
         }
 
         // 2. Filter by Department
@@ -55,7 +57,7 @@ public class JsonUserRepository : IUserRepository
         }
 
         // 5. Total count after filtering
-        var totalCount = query.Count();
+        var totalCount = await query.CountAsync(cancellationToken);
 
         // 6. Dynamic Sorting
         query = (parameters.SortBy?.ToLowerInvariant(), parameters.SortDescending) switch
@@ -80,84 +82,84 @@ public class JsonUserRepository : IUserRepository
         var pageNumber = parameters.PageNumber < 1 ? 1 : parameters.PageNumber;
         var pageSize = parameters.PageSize < 1 ? 10 : (parameters.PageSize > 100 ? 100 : parameters.PageSize);
 
-        var pagedItems = query
+        var pagedItems = await query
             .Skip((pageNumber - 1) * pageSize)
             .Take(pageSize)
-            .ToList();
+            .ToListAsync(cancellationToken);
 
         return new PagedResult<User>(pagedItems, totalCount, pageNumber, pageSize);
     }
 
     public async Task<User?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var users = await _storageService.ReadUsersAsync(cancellationToken);
-        return users.FirstOrDefault(u => u.Id == id);
+        return await _context.Users
+            .FirstOrDefaultAsync(u => u.Id == id, cancellationToken);
     }
 
     public async Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default)
     {
         var normalizedEmail = email.Trim().ToLowerInvariant();
-        var users = await _storageService.ReadUsersAsync(cancellationToken);
-        return users.FirstOrDefault(u => u.Email.Equals(normalizedEmail, StringComparison.OrdinalIgnoreCase));
+        return await _context.Users
+            .FirstOrDefaultAsync(u => u.Email.ToLower() == normalizedEmail, cancellationToken);
     }
 
     public async Task<bool> ExistsByEmailAsync(string email, Guid? excludeUserId = null, CancellationToken cancellationToken = default)
     {
         var normalizedEmail = email.Trim().ToLowerInvariant();
-        var users = await _storageService.ReadUsersAsync(cancellationToken);
-
-        return users.Any(u =>
-            u.Email.Equals(normalizedEmail, StringComparison.OrdinalIgnoreCase) &&
-            (!excludeUserId.HasValue || u.Id != excludeUserId.Value));
+        return await _context.Users
+            .AnyAsync(u =>
+                u.Email.ToLower() == normalizedEmail &&
+                (!excludeUserId.HasValue || u.Id != excludeUserId.Value),
+                cancellationToken);
     }
 
     public async Task<User> AddAsync(User user, CancellationToken cancellationToken = default)
     {
-        var users = await _storageService.ReadUsersAsync(cancellationToken);
-
-        if (users.Any(u => u.Email.Equals(user.Email, StringComparison.OrdinalIgnoreCase)))
+        var normalizedEmail = user.Email.Trim().ToLowerInvariant();
+        var emailExists = await _context.Users.AnyAsync(u => u.Email.ToLower() == normalizedEmail, cancellationToken);
+        if (emailExists)
         {
             throw new DuplicateEmailException(user.Email);
         }
 
-        users.Add(user);
-        await _storageService.WriteUsersAsync(users, cancellationToken);
+        await _context.Users.AddAsync(user, cancellationToken);
+        await _context.SaveChangesAsync(cancellationToken);
         return user;
     }
 
     public async Task<User> UpdateAsync(User user, CancellationToken cancellationToken = default)
     {
-        var users = await _storageService.ReadUsersAsync(cancellationToken);
-        var existingIndex = users.FindIndex(u => u.Id == user.Id);
-
-        if (existingIndex == -1)
+        var existingUser = await _context.Users.FirstOrDefaultAsync(u => u.Id == user.Id, cancellationToken);
+        if (existingUser == null)
         {
             throw new UserNotFoundException(user.Id);
         }
 
-        // Validate that another user doesn't already have this email
-        if (users.Any(u => u.Id != user.Id && u.Email.Equals(user.Email, StringComparison.OrdinalIgnoreCase)))
+        var normalizedEmail = user.Email.Trim().ToLowerInvariant();
+        var emailExistsOnOther = await _context.Users.AnyAsync(
+            u => u.Id != user.Id && u.Email.ToLower() == normalizedEmail,
+            cancellationToken);
+
+        if (emailExistsOnOther)
         {
             throw new DuplicateEmailException(user.Email);
         }
 
-        users[existingIndex] = user;
-        await _storageService.WriteUsersAsync(users, cancellationToken);
-        return user;
+        _context.Entry(existingUser).CurrentValues.SetValues(user);
+        await _context.SaveChangesAsync(cancellationToken);
+        return existingUser;
     }
 
     public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var users = await _storageService.ReadUsersAsync(cancellationToken);
-        var userToRemove = users.FirstOrDefault(u => u.Id == id);
-
-        if (userToRemove == null)
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == id, cancellationToken);
+        if (user == null)
         {
             return false;
         }
 
-        users.Remove(userToRemove);
-        await _storageService.WriteUsersAsync(users, cancellationToken);
+        _context.Users.Remove(user);
+        await _context.SaveChangesAsync(cancellationToken);
         return true;
     }
 }

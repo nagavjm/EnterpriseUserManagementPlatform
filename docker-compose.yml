@@ -10,10 +10,7 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_URLS=http://+:5100
-      - JsonStorage__StorageDirectory=/app/data
-      - JsonStorage__FileName=users.json
-    volumes:
-      - eump-storage:/app/data
+      - ConnectionStrings__DefaultConnection=Server=tcp:eump-sql-nagarajan.database.windows.net,1433;Initial Catalog=enterprise-user-db;Persist Security Info=False;User ID=sqladmin;Password=AdminSecureP@ss2026!;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:5100/health/ready || exit 1"]
       interval: 10s
@@ -40,8 +37,3 @@ services:
 networks:
   eump-network:
     driver: bridge
-
-volumes:
-  eump-storage:
-    name: eump-data
-

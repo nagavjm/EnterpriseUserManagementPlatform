@@ -1,11 +1,11 @@
 using System.Text.Json.Serialization;
-using EnterpriseUserManagement.Api.Health;
 using EnterpriseUserManagement.Api.Middleware;
 using EnterpriseUserManagement.Application;
-using EnterpriseUserManagement.Application.Interfaces;
 using EnterpriseUserManagement.Infrastructure;
+using EnterpriseUserManagement.Infrastructure.Data;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Scalar.AspNetCore;
 
@@ -40,11 +40,11 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 
 // 3. Register Application & Infrastructure Clean Architecture layers
 builder.Services.AddApplication();
-builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddInfrastructure(builder.Configuration, builder.Environment.EnvironmentName);
 
-// 4. Configure Health Checks
+// 4. Configure Health Checks (checks Azure SQL Database readiness)
 builder.Services.AddHealthChecks()
-    .AddCheck<JsonStorageHealthCheck>("json_storage", tags: new[] { "ready" });
+    .AddDbContextCheck<ApplicationDbContext>("azure_sql", tags: new[] { "ready" });
 
 // 5. Configure OpenAPI (.NET 9 standard)
 builder.Services.AddOpenApi();
@@ -81,7 +81,7 @@ app.MapHealthChecks("/health", new HealthCheckOptions
     Predicate = _ => false
 });
 
-// Readiness probe (Kubernetes: /health/ready - checks storage accessibility)
+// Readiness probe (Kubernetes: /health/ready - checks database accessibility)
 app.MapHealthChecks("/health/ready", new HealthCheckOptions
 {
     Predicate = check => check.Tags.Contains("ready"),
@@ -106,11 +106,30 @@ app.UseAuthorization();
 
 app.MapControllers();
 
-// 9. Startup initialization: Seed sample records if users.json does not exist
+// 9. Startup initialization: Apply EF Core Code-First migrations or ensure created
 using (var scope = app.Services.CreateScope())
 {
-    var storageService = scope.ServiceProvider.GetRequiredService<IJsonStorageService>();
-    await storageService.EnsureInitializedAsync();
+    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    try
+    {
+        if (dbContext.Database.IsRelational())
+        {
+            logger.LogInformation("Applying EF Core migrations to Azure SQL database...");
+            await dbContext.Database.MigrateAsync();
+            logger.LogInformation("Database migrations applied successfully.");
+        }
+        else
+        {
+            await dbContext.Database.EnsureCreatedAsync();
+        }
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "An error occurred while applying EF Core migrations / initializing database.");
+        throw;
+    }
 }
 
 app.Run();

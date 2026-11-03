@@ -29,6 +29,7 @@ variables:
   azureServiceConnection: 'azure-rm-connection' # ARM Service Connection name in Azure DevOps
   acrName: 'acreump1001'                        # Azure Container Registry name (without .azurecr.io)
   acrLoginServer: '$(acrName).azurecr.io'       # e.g., acreump1001.azurecr.io
+  keyVaultName: 'kv-eump-1001'                  # Azure Key Vault name storing SqlConnectionString
 
   # Dev Environment Target Settings
   devResourceGroup: 'rg-eump'                   # Dev Azure Resource Group
@@ -204,11 +205,12 @@ stages:
                       echo "1. Ensuring Namespace $TARGET_NS exists..."
                       kubectl create namespace $TARGET_NS --dry-run=client -o yaml | kubectl apply -f -
 
-                      echo "2. Applying Dev Persistent Storage Claim..."
-                      kubectl apply -f "$MANIFEST_DIR/01-storage.yaml" -n $TARGET_NS
-
-                      echo "3. Applying Dev ConfigMap & Secret..."
+                      echo "2. Applying Dev ConfigMap, SecretProviderClass & Secret..."
                       kubectl apply -f "$MANIFEST_DIR/02-configmap-dev.yaml" -n $TARGET_NS
+                      TENANT_ID=$(az account show --query tenantId -o tsv)
+                      sed -e "s|keyvaultName:\s*\"[^\"]*\"|keyvaultName: \"$(keyVaultName)\"|g" \
+                          -e "s|tenantId:\s*\"[^\"]*\"|tenantId: \"$TENANT_ID\"|g" \
+                        "$MANIFEST_DIR/03-secret-provider-class.yaml" | kubectl apply -f - -n $TARGET_NS
                       kubectl apply -f "$MANIFEST_DIR/03-secret.yaml" -n $TARGET_NS
 
                       echo "4. Deploying Backend with image $(acrLoginServer)/eump-backend:$(tag)..."
@@ -282,11 +284,12 @@ stages:
                       echo "1. Ensuring Namespace $TARGET_NS exists..."
                       kubectl create namespace $TARGET_NS --dry-run=client -o yaml | kubectl apply -f -
 
-                      echo "2. Applying Production Persistent Storage Claim..."
-                      kubectl apply -f "$MANIFEST_DIR/01-storage.yaml" -n $TARGET_NS
-
-                      echo "3. Applying Production ConfigMap & Secret..."
+                      echo "2. Applying Production ConfigMap, SecretProviderClass & Secret..."
                       kubectl apply -f "$MANIFEST_DIR/02-configmap-prod.yaml" -n $TARGET_NS
+                      TENANT_ID=$(az account show --query tenantId -o tsv)
+                      sed -e "s|keyvaultName:\s*\"[^\"]*\"|keyvaultName: \"$(keyVaultName)\"|g" \
+                          -e "s|tenantId:\s*\"[^\"]*\"|tenantId: \"$TENANT_ID\"|g" \
+                        "$MANIFEST_DIR/03-secret-provider-class.yaml" | kubectl apply -f - -n $TARGET_NS
                       kubectl apply -f "$MANIFEST_DIR/03-secret.yaml" -n $TARGET_NS
 
                       echo "4. Deploying Backend with image $(acrLoginServer)/eump-backend:$(tag)..."

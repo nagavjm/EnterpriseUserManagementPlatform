@@ -10,18 +10,18 @@ EUMP is designed following **Clean Architecture** and **SOLID principles**:
 
 - **Domain (`EnterpriseUserManagement.Domain`)**: Core enterprise entities (`User`), enums (`Department`, `Role`), and business rules. Completely decoupled from external frameworks.
 - **Application (`EnterpriseUserManagement.Application`)**: DTOs, business contracts, input validation, and repository abstractions (`IUserRepository`).
-- **Infrastructure (`EnterpriseUserManagement.Infrastructure`)**: Persistent JSON file storage engine utilizing `System.Text.Json`, `SemaphoreSlim` async write synchronization, safe temporary-file atomic replacement, and configurable data paths for Docker volumes and Kubernetes PVCs.
-- **API (`EnterpriseUserManagement.Api`)**: ASP.NET Core 9 Web API presentation layer with thin controllers, Swagger/OpenAPI documentation, health probes (`/health`, `/health/ready`), and global exception handling.
+- **Infrastructure (`EnterpriseUserManagement.Infrastructure`)**: Entity Framework Core 9 relational data layer with Azure SQL / SQL Server provider (`Microsoft.EntityFrameworkCore.SqlServer`), `ApplicationDbContext`, entity schema mapping, automatic seed data, retry resiliency (`EnableRetryOnFailure`), and `SqlUserRepository`.
+- **API (`EnterpriseUserManagement.Api`)**: ASP.NET Core 9 Web API presentation layer with thin controllers, Swagger/Scalar OpenAPI documentation, database health probes (`/health`, `/health/ready`), automatic startup EF Core migrations, and global exception handling.
 - **Frontend (`enterprise-user-management-ui`)**: Angular 19 SPA with standalone components, reactive forms, routing, and centralized REST client services.
 
 ---
 
 ## 2. Technology Stack
 
-- **Backend**: .NET 9 Web API, C#, System.Text.Json, Swagger / OpenAPI
+- **Backend**: .NET 9 Web API, C#, Entity Framework Core 9 (Code-First Migrations), Scalar / OpenAPI
 - **Frontend**: Angular 19, TypeScript, RxJS, Reactive Forms
-- **Storage**: JSON file-based persistence (`users.json`)
-- **Containers & Orchestration**: Docker, Docker Compose, Kubernetes
+- **Database**: Azure SQL Database / Microsoft SQL Server (EF Core Code-First Migrations)
+- **Containers & Orchestration**: Docker, Docker Compose, Kubernetes, Azure Kubernetes Service (AKS)
 
 ---
 

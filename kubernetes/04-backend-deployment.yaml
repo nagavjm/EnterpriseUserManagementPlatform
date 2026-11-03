@@ -7,14 +7,14 @@ metadata:
     app.kubernetes.io/component: backend
     app.kubernetes.io/part-of: eump
 spec:
-  # NOTE ON REPLICAS:
-  # Physical JSON file persistence uses an in-process asynchronous semaphore (SemaphoreSlim)
-  # and atomic file swapping (.tmp -> .json). Setting replicas to 1 guarantees thread-safe,
-  # zero-race-condition writes without requiring an external distributed lock manager.
-  # Pod rescheduling and recovery are managed automatically by Kubernetes via the PersistentVolumeClaim.
-  replicas: 1
+  # With Azure SQL Database persistence and EF Core, the backend is stateless
+  # and can safely scale across multiple pod replicas with zero downtime rolling updates.
+  replicas: 2
   strategy:
-    type: Recreate # Ensures old pod unmounts the ReadWriteOnce PVC before new pod mounts it
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app.kubernetes.io/name: enterprise-user-management-platform
@@ -26,12 +26,6 @@ spec:
         app.kubernetes.io/component: backend
         app.kubernetes.io/part-of: eump
     spec:
-      # AKS Security Context: Azure Disks/Files attach as root by default.
-      # Setting fsGroup to 1654 gives the non-root ASP.NET Core process ($APP_UID 1654)
-      # full read/write permissions to /app/data without permission errors.
-      securityContext:
-        fsGroup: 1654
-        fsGroupChangePolicy: "OnRootMismatch"
       containers:
         - name: backend
           # For AKS, tag and push to your Azure Container Registry: <acrName>.azurecr.io/eump-backend:latest
@@ -48,8 +42,11 @@ spec:
             - secretRef:
                 name: eump-secret
           volumeMounts:
-            - name: storage-volume
-              mountPath: /app/data
+            # Mounting the Secrets Store CSI volume triggers the driver to fetch the
+            # SqlConnectionString from Azure Key Vault and synchronize it into eump-secret.
+            - name: secrets-store-inline
+              mountPath: "/mnt/secrets-store"
+              readOnly: true
           resources:
             requests:
               cpu: "100m"
@@ -66,7 +63,7 @@ spec:
             periodSeconds: 20
             timeoutSeconds: 5
             failureThreshold: 3
-          # Kubernetes Readiness Probe: verifies that the physical JSON storage is accessible
+          # Kubernetes Readiness Probe: verifies that Azure SQL database connectivity is healthy
           readinessProbe:
             httpGet:
               path: /health/ready
@@ -76,7 +73,9 @@ spec:
             timeoutSeconds: 5
             failureThreshold: 3
       volumes:
-        - name: storage-volume
-          persistentVolumeClaim:
-            claimName: eump-storage-pvc
-
+        - name: secrets-store-inline
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: "azure-kv-eump-secret-provider"
