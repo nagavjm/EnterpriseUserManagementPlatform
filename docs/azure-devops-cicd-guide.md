@@ -14,29 +14,31 @@ graph TD
 
     subgraph CI["Stage 1: Continuous Integration (CI)"]
         subgraph ParallelValidation["Parallel Validation"]
-            Job1["Backend Job (.NET 9)<br/>- dotnet restore<br/>- dotnet build<br/>- dotnet test (TRX + Coverage)"]
-            Job2["Frontend Job (Angular 19)<br/>- npm ci<br/>- ng build --configuration production"]
+            Job1["Backend Job (.NET 9)<br/>- dotnet restore & build<br/>- 38 unit & integration tests<br/>- Cobertura code coverage<br/>- TRX test reporting"]
+            Job2["Frontend Job (Angular 19)<br/>- npm ci<br/>- ng build --configuration production<br/>- Bundle budget & type check"]
         end
 
         Job3["Containerization Job<br/>- az acr login<br/>- docker build & tag ($(Build.BuildId))<br/>- docker push to ACR<br/>- Publish manifests artifact"]
     end
 
-    subgraph CD["Stage 2: Continuous Delivery (CD)"]
-        subgraph Env["Environment: eump-production"]
-            Approval["Pre-deployment Approval Gate (Optional)"]
-            Deploy["Deployment Task<br/>- az aks get-credentials<br/>- Dynamic tag injection<br/>- kubectl apply<br/>- kubectl rollout status"]
+    subgraph CDDev["Stage 2: Continuous Delivery (Dev)"]
+        subgraph EnvDev["Environment: eump-dev"]
+            DeployDev["Deploy to Dev<br/>- Target namespace: eump-dev<br/>- Dev ConfigMap (Swagger, Debug logs)<br/>- Frontend replicas: 1 (cost saving)<br/>- Isolated Dev Azure Disk"]
         end
     end
 
-    subgraph AKSCluster["Azure Kubernetes Service (AKS)"]
-        Pods["eump Namespace<br/>- backend-deployment:$(Build.BuildId)<br/>- frontend-deployment:$(Build.BuildId)<br/>- LoadBalancer Service"]
+    subgraph CDProd["Stage 3: Continuous Delivery (Production)"]
+        subgraph EnvProd["Environment: eump-prod"]
+            Gate["Pre-Deployment Approval Gate<br/>(Manual Sign-off in Azure DevOps)"]
+            DeployProd["Deploy to Production<br/>- Target namespace: eump-prod<br/>- Prod ConfigMap (Production mode)<br/>- Frontend replicas: 2 (High Availability)<br/>- Isolated Prod Azure Disk"]
+        end
     end
 
     Commit --> Job1 & Job2
     Job1 & Job2 -->|Both Pass| Job3
-    Job3 --> Approval
-    Approval --> Deploy
-    Deploy --> Pods
+    Job3 --> DeployDev
+    DeployDev -->|Dev Verified| Gate
+    Gate -->|Approved| DeployProd
 ```
 
 ---
@@ -45,13 +47,14 @@ graph TD
 
 | Practice | Implementation | Why It Matters |
 | :--- | :--- | :--- |
+| **Multi-Environment Promotion** | Dev (`eump-dev`) $\rightarrow$ Prod (`eump-prod`) | Code is automatically verified in an isolated Dev environment before being promoted to Production. |
 | **Pipeline as Code** | `azure-pipelines.yml` stored directly in Git repository | Version controlled, auditable, and reviewed like any other software code. |
-| **Separation of CI & CD** | Multi-stage pipeline (`BuildAndTest` -> `DeployToAKS`) | Prevents deploying code if unit/integration tests or build validation fail. |
-| **Immutable Build Tags** | `$(Build.BuildId)` (e.g. `1042`) used for image tags alongside `latest` | Never deploy solely `:latest` in production. Immutable tags enable rollbacks, clear audit trails, and eliminate Docker image caching ambiguities. |
+| **Separation of CI & CD** | Multi-stage pipeline (`BuildAndTest` -> `DeployToDev` -> `DeployToProd`) | Prevents deploying code if unit/integration tests or build validation fail. |
+| **Immutable Build Tags** | `$(Build.BuildId)` (e.g. `1042`) used for image tags alongside `latest` | The exact same container image tested in Dev is promoted to Prod. Never deploy solely `:latest`. |
 | **Automated Test Reporting** | `PublishTestResults@2` + `PublishCodeCoverageResults@2` | Visual pass/fail graphs and code coverage statistics displayed directly in the Azure DevOps **Tests** and **Code Coverage** tabs. |
-| **Azure DevOps Environment** | Targeted `environment: 'eump-production'` | Enables deployment history tracking, release approval gates (manual sign-offs), and rollback capability. |
-| **PR Validation Isolation** | `condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))` | Pull requests execute tests and build checks without pushing images to ACR or modifying the live AKS cluster. |
-| **Least Privilege & Security** | Single ARM Service Connection with RBAC; non-root pod execution (`fsGroup: 1654`) | Eliminates hardcoded passwords, tokens, or long-lived API keys. |
+| **Azure DevOps Environment Gates** | Environments `eump-dev` and `eump-prod` | Automatic deployment to Dev; manual sign-off required before deploying to Production. |
+| **PR Validation Isolation** | `condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))` | Pull requests execute tests and build checks without pushing images to ACR or modifying any cluster. |
+| **Storage & Data Isolation** | Separate PVCs in `eump-dev` and `eump-prod` | Dev and Prod have completely isolated Azure Managed Disks. Dev testing will never affect production data. |
 
 ---
 
@@ -76,16 +79,29 @@ This allows Azure DevOps to securely communicate with your Azure subscription, A
 
 ---
 
-### Step 2: Create the Pipeline Environment
+### Step 2: Create the Pipeline Environments (Dev & Prod)
+
+You need to create two environments in Azure DevOps:
+1. **`eump-dev`**: For automated continuous deployment to the Dev namespace.
+2. **`eump-prod`**: For gated continuous deployment to the Production namespace.
+
+#### Create Dev Environment:
 1. In the left navigation menu, go to **Pipelines** -> **Environments**.
 2. Click **New environment**.
-3. **Name**: Enter `eump-production` (matching the environment in `azure-pipelines.yml`).
+3. **Name**: Enter `eump-dev`.
 4. **Resource**: Select **None** -> Click **Create**.
-5. *(Optional - Approval Gate)*:
-   - Click the three dots (`...`) in the top right of the `eump-production` environment -> **Approvals and checks**.
+
+#### Create Production Environment with Approval Gate:
+1. In **Pipelines** -> **Environments**, click **New environment**.
+2. **Name**: Enter `eump-prod`.
+3. **Resource**: Select **None** -> Click **Create**.
+4. **Add Approval Gate**:
+   - In the top-right corner of the `eump-prod` screen, click the three dots (`...`) -> **Approvals and checks**.
    - Click **+** -> **Approvals**.
-   - Add yourself or your team leads as required approvers.
-   - This ensures production deployments require explicit sign-off before manifests apply to AKS!
+   - Add yourself or your team leads as designated approvers.
+   - Click **Create**.
+
+> **How it works in practice**: When you merge code to `main`, Stage 1 (CI) builds and tests the app, Stage 2 (Dev) deploys automatically to `eump-dev`. Stage 3 (Prod) pauses, sends an approval notification, and only deploys to `eump-prod` once approved!
 
 ---
 

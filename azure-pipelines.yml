@@ -1,7 +1,7 @@
 # ===============================================================================
 # Azure DevOps CI/CD Pipeline - Enterprise User Management Platform (EUMP)
-# Target: Azure Kubernetes Service (AKS) & Azure Container Registry (ACR)
-# Standards: Multi-stage, Immutable Build IDs, Automated Quality Gates, Environments
+# Target Environments: Dev (eump-dev) -> Prod (eump-prod) on AKS
+# Standards: Multi-stage, Quality Gates, Immutable Build IDs, Environment Promotion
 # ===============================================================================
 
 name: $(Date:yyyyMMdd)$(Rev:.r)
@@ -25,14 +25,20 @@ pr:
 variables:
   # ---------------------------------------------------------------------------
   # Azure DevOps Service Connection & Azure Resources Configuration
-  # Update these values or configure them via Azure DevOps Variable Groups
   # ---------------------------------------------------------------------------
   azureServiceConnection: 'azure-rm-connection' # ARM Service Connection name in Azure DevOps
-  azureResourceGroup: 'rg-eump'                 # Azure Resource Group
-  aksClusterName: 'aks-eump'                    # AKS Cluster name
   acrName: 'acreump'                            # Azure Container Registry name (without .azurecr.io)
   acrLoginServer: '$(acrName).azurecr.io'       # e.g., acreump.azurecr.io
-  k8sNamespace: 'eump'
+
+  # Dev Environment Target Settings
+  devResourceGroup: 'rg-eump'                   # Dev Azure Resource Group
+  devAksCluster: 'aks-eump'                     # Dev AKS Cluster name
+  devNamespace: 'eump-dev'                      # Isolated Dev Kubernetes Namespace
+
+  # Prod Environment Target Settings
+  prodResourceGroup: 'rg-eump'                  # Prod Azure Resource Group (same or separate)
+  prodAksCluster: 'aks-eump'                    # Prod AKS Cluster name (same or separate)
+  prodNamespace: 'eump-prod'                    # Isolated Prod Kubernetes Namespace
 
   # Build Configuration
   buildConfiguration: 'Release'
@@ -46,8 +52,8 @@ pool:
 # ===============================================================================
 # STAGE 1: CONTINUOUS INTEGRATION (CI)
 # - Parallel Backend (.NET 9) and Frontend (Angular 19) Validation
-# - Code Quality & Unit/Integration Tests Reporting
-# - Docker Container Build & Push to ACR
+# - Code Quality, Unit/Integration Tests Reporting & Coverage
+# - Docker Container Build & Push to ACR with immutable $(Build.BuildId)
 # - Publish Manifest Artifacts
 # ===============================================================================
 stages:
@@ -161,19 +167,18 @@ stages:
               artifact: 'manifests'
 
 # ===============================================================================
-# STAGE 2: CONTINUOUS DELIVERY (CD)
-# - Deploys to AKS using Azure DevOps Environment tracking
-# - Injects immutable build tags into deployment manifests
-# - Validates pod rollouts and reports public load balancer status
+# STAGE 2: CONTINUOUS DELIVERY - DEV ENVIRONMENT
+# - Automatically deploys to dev namespace (eump-dev) upon successful CI build
+# - Uses Development configuration (detailed logging, Swagger/Scalar enabled)
 # ===============================================================================
-  - stage: DeployToAKS
-    displayName: 'CD: Deploy to Azure Kubernetes Service'
+  - stage: DeployToDev
+    displayName: 'CD: Deploy to Dev Environment'
     dependsOn: BuildAndTest
     condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
     jobs:
-      - deployment: DeployProduction
-        displayName: 'Deploy to Production AKS Cluster'
-        environment: 'eump-production'
+      - deployment: DeployDev
+        displayName: 'Deploy to Dev AKS Namespace'
+        environment: 'eump-dev'
         strategy:
           runOnce:
             deploy:
@@ -183,7 +188,7 @@ stages:
                   displayName: 'Download Kubernetes Manifests'
 
                 - task: AzureCLI@2
-                  displayName: 'Connect to AKS & Apply Manifests'
+                  displayName: 'Deploy EUMP to Dev Environment'
                   inputs:
                     azureSubscription: '$(azureServiceConnection)'
                     scriptType: 'bash'
@@ -191,44 +196,116 @@ stages:
                     inlineScript: |
                       set -e
                       MANIFEST_DIR="$(Pipeline.Workspace)/manifests"
+                      TARGET_NS="$(devNamespace)"
 
-                      echo "Fetching AKS Credentials for cluster $(aksClusterName)..."
-                      az aks get-credentials --resource-group $(azureResourceGroup) --name $(aksClusterName) --overwrite-existing
+                      echo "Connecting kubectl to Dev AKS cluster $(devAksCluster)..."
+                      az aks get-credentials --resource-group $(devResourceGroup) --name $(devAksCluster) --overwrite-existing
 
-                      echo "1. Applying Namespace..."
-                      kubectl apply -f "$MANIFEST_DIR/00-namespace.yaml"
+                      echo "1. Ensuring Namespace $TARGET_NS exists..."
+                      kubectl create namespace $TARGET_NS --dry-run=client -o yaml | kubectl apply -f -
 
-                      echo "2. Applying Persistent Storage Claim..."
-                      kubectl apply -f "$MANIFEST_DIR/01-storage.yaml"
+                      echo "2. Applying Dev Persistent Storage Claim..."
+                      kubectl apply -f "$MANIFEST_DIR/01-storage.yaml" -n $TARGET_NS
 
-                      echo "3. Applying ConfigMap & Secret..."
-                      kubectl apply -f "$MANIFEST_DIR/02-configmap.yaml"
-                      kubectl apply -f "$MANIFEST_DIR/03-secret.yaml"
+                      echo "3. Applying Dev ConfigMap & Secret..."
+                      kubectl apply -f "$MANIFEST_DIR/02-configmap-dev.yaml" -n $TARGET_NS
+                      kubectl apply -f "$MANIFEST_DIR/03-secret.yaml" -n $TARGET_NS
 
                       echo "4. Deploying Backend with image $(acrLoginServer)/eump-backend:$(tag)..."
                       sed "s|image:\s*eump-backend:latest|image: $(acrLoginServer)/eump-backend:$(tag)|g" \
-                        "$MANIFEST_DIR/04-backend-deployment.yaml" | kubectl apply -f -
+                        "$MANIFEST_DIR/04-backend-deployment.yaml" | kubectl apply -f - -n $TARGET_NS
 
                       echo "5. Applying Backend ClusterIP Service..."
-                      kubectl apply -f "$MANIFEST_DIR/05-backend-service.yaml"
+                      kubectl apply -f "$MANIFEST_DIR/05-backend-service.yaml" -n $TARGET_NS
 
-                      echo "6. Deploying Frontend with image $(acrLoginServer)/eump-frontend:$(tag)..."
-                      sed "s|image:\s*eump-frontend:latest|image: $(acrLoginServer)/eump-frontend:$(tag)|g" \
-                        "$MANIFEST_DIR/06-frontend-deployment.yaml" | kubectl apply -f -
+                      echo "6. Deploying Frontend with image $(acrLoginServer)/eump-frontend:$(tag) (Replicas: 1 for Dev)..."
+                      sed -e "s|image:\s*eump-frontend:latest|image: $(acrLoginServer)/eump-frontend:$(tag)|g" \
+                          -e "s|replicas:\s*2|replicas: 1|g" \
+                        "$MANIFEST_DIR/06-frontend-deployment.yaml" | kubectl apply -f - -n $TARGET_NS
 
                       echo "7. Applying Frontend LoadBalancer Service..."
-                      kubectl apply -f "$MANIFEST_DIR/07-frontend-service.yaml"
+                      kubectl apply -f "$MANIFEST_DIR/07-frontend-service.yaml" -n $TARGET_NS
 
                       echo "8. Applying Ingress..."
-                      kubectl apply -f "$MANIFEST_DIR/08-ingress.yaml"
+                      kubectl apply -f "$MANIFEST_DIR/08-ingress.yaml" -n $TARGET_NS
 
-                      echo "Waiting for Backend rollout to complete..."
-                      kubectl rollout status deployment/backend-deployment -n $(k8sNamespace) --timeout=180s
+                      echo "Waiting for Dev Backend rollout..."
+                      kubectl rollout status deployment/backend-deployment -n $TARGET_NS --timeout=180s
 
-                      echo "Waiting for Frontend rollout to complete..."
-                      kubectl rollout status deployment/frontend-deployment -n $(k8sNamespace) --timeout=180s
+                      echo "Waiting for Dev Frontend rollout..."
+                      kubectl rollout status deployment/frontend-deployment -n $TARGET_NS --timeout=180s
 
-                      echo "Deployment complete! Fetching Azure Public IP..."
-                      kubectl get svc frontend -n $(k8sNamespace)
-                      kubectl get pods -n $(k8sNamespace) -o wide
+                      echo "Dev deployment succeeded! Dev Resources:"
+                      kubectl get svc,pods,pvc -n $TARGET_NS
 
+# ===============================================================================
+# STAGE 3: CONTINUOUS DELIVERY - PROD ENVIRONMENT
+# - Runs only after Dev deployment succeeds
+# - Targets 'eump-prod' environment (requires approval gate in Azure DevOps)
+# - Uses Production configuration (optimized logging, 2 frontend replicas for HA)
+# ===============================================================================
+  - stage: DeployToProd
+    displayName: 'CD: Deploy to Production Environment'
+    dependsOn: DeployToDev
+    condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
+    jobs:
+      - deployment: DeployProduction
+        displayName: 'Deploy to Production AKS Namespace'
+        environment: 'eump-prod'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - download: current
+                  artifact: 'manifests'
+                  displayName: 'Download Kubernetes Manifests'
+
+                - task: AzureCLI@2
+                  displayName: 'Deploy EUMP to Production Environment'
+                  inputs:
+                    azureSubscription: '$(azureServiceConnection)'
+                    scriptType: 'bash'
+                    scriptLocation: 'inlineScript'
+                    inlineScript: |
+                      set -e
+                      MANIFEST_DIR="$(Pipeline.Workspace)/manifests"
+                      TARGET_NS="$(prodNamespace)"
+
+                      echo "Connecting kubectl to Production AKS cluster $(prodAksCluster)..."
+                      az aks get-credentials --resource-group $(prodResourceGroup) --name $(prodAksCluster) --overwrite-existing
+
+                      echo "1. Ensuring Namespace $TARGET_NS exists..."
+                      kubectl create namespace $TARGET_NS --dry-run=client -o yaml | kubectl apply -f -
+
+                      echo "2. Applying Production Persistent Storage Claim..."
+                      kubectl apply -f "$MANIFEST_DIR/01-storage.yaml" -n $TARGET_NS
+
+                      echo "3. Applying Production ConfigMap & Secret..."
+                      kubectl apply -f "$MANIFEST_DIR/02-configmap-prod.yaml" -n $TARGET_NS
+                      kubectl apply -f "$MANIFEST_DIR/03-secret.yaml" -n $TARGET_NS
+
+                      echo "4. Deploying Backend with image $(acrLoginServer)/eump-backend:$(tag)..."
+                      sed "s|image:\s*eump-backend:latest|image: $(acrLoginServer)/eump-backend:$(tag)|g" \
+                        "$MANIFEST_DIR/04-backend-deployment.yaml" | kubectl apply -f - -n $TARGET_NS
+
+                      echo "5. Applying Backend ClusterIP Service..."
+                      kubectl apply -f "$MANIFEST_DIR/05-backend-service.yaml" -n $TARGET_NS
+
+                      echo "6. Deploying Frontend with image $(acrLoginServer)/eump-frontend:$(tag) (Replicas: 2 for HA)..."
+                      sed "s|image:\s*eump-frontend:latest|image: $(acrLoginServer)/eump-frontend:$(tag)|g" \
+                        "$MANIFEST_DIR/06-frontend-deployment.yaml" | kubectl apply -f - -n $TARGET_NS
+
+                      echo "7. Applying Frontend LoadBalancer Service..."
+                      kubectl apply -f "$MANIFEST_DIR/07-frontend-service.yaml" -n $TARGET_NS
+
+                      echo "8. Applying Ingress..."
+                      kubectl apply -f "$MANIFEST_DIR/08-ingress.yaml" -n $TARGET_NS
+
+                      echo "Waiting for Production Backend rollout..."
+                      kubectl rollout status deployment/backend-deployment -n $TARGET_NS --timeout=180s
+
+                      echo "Waiting for Production Frontend rollout..."
+                      kubectl rollout status deployment/frontend-deployment -n $TARGET_NS --timeout=180s
+
+                      echo "Production deployment succeeded! Production Resources:"
+                      kubectl get svc,pods,pvc -n $TARGET_NS

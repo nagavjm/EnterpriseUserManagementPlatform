@@ -2,7 +2,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: backend-deployment
-  namespace: eump
   labels:
     app.kubernetes.io/name: enterprise-user-management-platform
     app.kubernetes.io/component: backend
