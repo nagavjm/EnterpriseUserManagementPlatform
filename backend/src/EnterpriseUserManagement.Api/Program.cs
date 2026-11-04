@@ -109,6 +109,7 @@ app.MapControllers();
 // 9. Startup initialization: Apply EF Core Code-First migrations or ensure created
 using (var scope = app.Services.CreateScope())
 {
+    throw new InvalidOperationException("Fatal application startup exception: Unable to initialize required configuration and database context.");
     var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
 
