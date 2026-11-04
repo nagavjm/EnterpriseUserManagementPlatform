@@ -7,14 +7,13 @@ metadata:
     app.kubernetes.io/component: backend
     app.kubernetes.io/part-of: eump
 spec:
-  # With Azure SQL Database persistence and EF Core, the backend is stateless
-  # and can safely scale across multiple pod replicas with zero downtime rolling updates.
-  replicas: 2
+  # Minimum initial replica is 1 so HPA autoscaling can be observed dynamically
+  replicas: 1
   strategy:
     type: RollingUpdate
     rollingUpdate:
       maxSurge: 1
-      maxUnavailable: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app.kubernetes.io/name: enterprise-user-management-platform
@@ -49,8 +48,8 @@ spec:
               readOnly: true
           resources:
             requests:
-              cpu: "100m"
-              memory: "128Mi"
+              cpu: "25m"
+              memory: "64Mi"
             limits:
               cpu: "500m"
               memory: "512Mi"

@@ -11,38 +11,31 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: backend-deployment
-  minReplicas: 2
-  maxReplicas: 8
+  minReplicas: 1
+  maxReplicas: 5
   metrics:
-    # Scale when average CPU utilization across pods exceeds 70% of requested CPU (100m)
+    # Scale aggressively on light load (e.g. 4 concurrent requests)
+    # 10% of requested CPU (25m) = 2.5m CPU threshold
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: 70
-    # Scale when average Memory utilization exceeds 80% of requested Memory (128Mi)
-    - type: Resource
-      resource:
-        name: memory
-        target:
-          type: Utilization
-          averageUtilization: 80
+          averageUtilization: 10
   behavior:
     scaleUp:
-      stabilizationWindowSeconds: 0 # React to traffic spikes immediately
+      stabilizationWindowSeconds: 0 # React to traffic immediately without delay
+      selectPolicy: Max
       policies:
+        - type: Pods
+          value: 2 # Add 2 pods immediately when threshold breached
+          periodSeconds: 10
         - type: Percent
           value: 100
-          periodSeconds: 15
-        - type: Pods
-          value: 2
-          periodSeconds: 15
-      selectPolicy: Max
+          periodSeconds: 10
     scaleDown:
-      stabilizationWindowSeconds: 300 # 5-minute cool-down window to avoid pod thrashing
+      stabilizationWindowSeconds: 120 # 2-minute stabilization window to allow observing scaled pods
       policies:
-        - type: Percent
-          value: 50
-          periodSeconds: 60
-
+        - type: Pods
+          value: 1
+          periodSeconds: 30
