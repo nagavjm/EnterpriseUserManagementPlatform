@@ -12,4 +12,5 @@ data:
   ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
   EnableSwagger: "false"
   EnableHttpsRedirection: "false"
+  ApplyMigrationsOnStartup: "false"
 

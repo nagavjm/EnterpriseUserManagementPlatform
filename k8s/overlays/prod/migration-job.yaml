@@ -1,0 +1,61 @@
+# Dedicated One-Off Kubernetes Job to apply EF Core migrations in Production
+# Usage:
+#   kubectl apply -f k8s/overlays/prod/migration-job.yaml
+#   kubectl wait --for=condition=complete --timeout=120s job/db-migration-job -n prod
+#   kubectl logs job/db-migration-job -n prod
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-migration-job
+  namespace: prod
+  labels:
+    app.kubernetes.io/name: enterprise-user-management-platform
+    app.kubernetes.io/component: migration
+    app.kubernetes.io/part-of: eump
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 600 # Automatically clean up completed job pod after 10 minutes
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: enterprise-user-management-platform
+        app.kubernetes.io/component: migration
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1654
+        runAsGroup: 1654
+        fsGroup: 1654
+      containers:
+        - name: migration
+          image: acreump100.azurecr.io/eump-backend:1.0.0
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: eump-config
+            - secretRef:
+                name: eump-secret
+          env:
+            # Explicitly force migration execution for this one-off job container only
+            - name: ApplyMigrationsOnStartup
+              value: "true"
+          volumeMounts:
+            - name: secrets-store-inline
+              mountPath: "/mnt/secrets-store"
+              readOnly: true
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+      volumes:
+        - name: secrets-store-inline
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: "azure-kv-eump-secret-provider"
+
