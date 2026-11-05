@@ -216,7 +216,7 @@ stages:
                       cd "$MANIFEST_DIR/overlays/dev"
                       
                       # Update image tags and ACR login server in kustomization.yaml
-                      sed -i "s|newTag:.*|newTag: $(tag)|g" kustomization.yaml
+                      sed -i "s|newTag:.*|newTag: \"$(tag)\"|g" kustomization.yaml
                       sed -i "s|newName:.*eump-backend|newName: $(acrLoginServer)/eump-backend|g" kustomization.yaml
                       sed -i "s|newName:.*eump-frontend|newName: $(acrLoginServer)/eump-frontend|g" kustomization.yaml
                       sed -i "s|keyvaultName:.*|keyvaultName: \"$(devKeyVaultName)\"|g" secret-provider-class.yaml
@@ -280,7 +280,7 @@ stages:
                       cd "$MANIFEST_DIR/overlays/prod"
 
                       # Update image tags and ACR login server in kustomization.yaml
-                      sed -i "s|newTag:.*|newTag: $(tag)|g" kustomization.yaml
+                      sed -i "s|newTag:.*|newTag: \"$(tag)\"|g" kustomization.yaml
                       sed -i "s|newName:.*eump-backend|newName: $(acrLoginServer)/eump-backend|g" kustomization.yaml
                       sed -i "s|newName:.*eump-frontend|newName: $(acrLoginServer)/eump-frontend|g" kustomization.yaml
                       sed -i "s|keyvaultName:.*|keyvaultName: \"$(prodKeyVaultName)\"|g" secret-provider-class.yaml
