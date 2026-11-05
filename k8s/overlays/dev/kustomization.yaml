@@ -1,0 +1,25 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: dev
+
+resources:
+  - namespace.yaml
+  - ../../base
+  - configmap.yaml
+  - secret-provider-class.yaml
+
+patches:
+  - path: patches/backend-patch.yaml
+  - path: patches/frontend-patch.yaml
+  - path: patches/ingress-patch.yaml
+  - path: patches/hpa-patch.yaml
+
+images:
+  - name: eump-backend
+    newName: acreump100.azurecr.io/eump-backend
+    newTag: latest
+  - name: eump-frontend
+    newName: acreump100.azurecr.io/eump-frontend
+    newTag: latest
+

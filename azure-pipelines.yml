@@ -1,7 +1,11 @@
 # ===============================================================================
 # Azure DevOps CI/CD Pipeline - Enterprise User Management Platform (EUMP)
-# Target Environments: Dev (eump-dev) -> Prod (eump-prod) on AKS
-# Standards: Multi-stage, Quality Gates, Immutable Build IDs, Environment Promotion
+# Target Architecture: 
+#   - One Azure Subscription
+#   - Shared Azure Container Registry (ACR)
+#   - Dev Environment: AKS 'aks-eump-dev' (Namespace: 'dev')
+#   - Prod Environment: AKS 'aks-eump-prod' (Namespace: 'prod')
+# Standards: Multi-stage, Quality Gates, Immutable Build IDs, Manual Approval Gate for Prod
 # ===============================================================================
 
 name: $(Date:yyyyMMdd)$(Rev:.r)
@@ -24,22 +28,23 @@ pr:
 
 variables:
   # ---------------------------------------------------------------------------
-  # Azure DevOps Service Connection & Azure Resources Configuration
+  # Azure DevOps Service Connection & Shared Azure Resources
   # ---------------------------------------------------------------------------
   azureServiceConnection: 'azure-rm-connection' # ARM Service Connection name in Azure DevOps
-  acrName: 'acreump1001'                        # Azure Container Registry name (without .azurecr.io)
-  acrLoginServer: '$(acrName).azurecr.io'       # e.g., acreump1001.azurecr.io
-  keyVaultName: 'kv-eump-nagarajan'             # Azure Key Vault name storing SqlConnectionString
+  acrName: 'acreump100'                        # Shared Azure Container Registry name
+  acrLoginServer: '$(acrName).azurecr.io'       # e.g., acreump100.azurecr.io
 
-  # Dev Environment Target Settings
-  devResourceGroup: 'rg-eump'                   # Dev Azure Resource Group
-  devAksCluster: 'aks-eump'                     # Dev AKS Cluster name
-  devNamespace: 'eump-dev'                      # Isolated Dev Kubernetes Namespace
+  # Dev Environment Target Settings (Cluster: aks-eump-dev, Namespace: dev)
+  devResourceGroup: 'rg-eump-dev'               # Dev Azure Resource Group
+  devAksCluster: 'aks-eump-dev'                 # Dev AKS Cluster name
+  devNamespace: 'dev'                           # Isolated Dev Kubernetes Namespace
+  devKeyVaultName: 'kv-eump-dev'               # Dev Azure Key Vault name
 
-  # Prod Environment Target Settings
-  prodResourceGroup: 'rg-eump'                  # Prod Azure Resource Group (same or separate)
-  prodAksCluster: 'aks-eump'                    # Prod AKS Cluster name (same or separate)
-  prodNamespace: 'eump-prod'                    # Isolated Prod Kubernetes Namespace
+  # Prod Environment Target Settings (Cluster: aks-eump-prod, Namespace: prod)
+  prodResourceGroup: 'rg-eump-prod'             # Prod Azure Resource Group
+  prodAksCluster: 'aks-eump-prod'               # Prod AKS Cluster name
+  prodNamespace: 'prod'                         # Isolated Prod Kubernetes Namespace
+  prodKeyVaultName: 'kv-eump-prod'             # Prod Azure Key Vault name
 
   # Build Configuration
   buildConfiguration: 'Release'
@@ -54,8 +59,8 @@ pool:
 # STAGE 1: CONTINUOUS INTEGRATION (CI)
 # - Parallel Backend (.NET 9) and Frontend (Angular 19) Validation
 # - Code Quality, Unit/Integration Tests Reporting & Coverage
-# - Docker Container Build & Push to ACR with immutable $(Build.BuildId)
-# - Publish Manifest Artifacts
+# - Docker Container Build & Push to Shared ACR with immutable $(Build.BuildId)
+# - Publish Kustomize Manifest Artifacts
 # ===============================================================================
 stages:
   - stage: BuildAndTest
@@ -122,63 +127,60 @@ stages:
             workingDirectory: 'frontend/enterprise-user-management-ui'
 
       # -------------------------------------------------------------------------
-      # Job 3: Docker Images Build & Push to Azure Container Registry (ACR)
-      # Runs only on push/merge to main after all quality tests pass
+      # Job 3: Docker Images Build & Push to Shared Azure Container Registry (ACR)
+      # Build ONCE, push immutable tag to shared ACR, deploy to both Dev and Prod
       # -------------------------------------------------------------------------
       - job: Container_Build_And_Push
-        displayName: 'Build & Push Docker Images to ACR'
+        displayName: 'Build & Push Docker Images to Shared ACR'
         dependsOn: [Backend_CI, Frontend_CI]
         condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
         steps:
           - task: AzureCLI@2
-            displayName: 'Build & Push Images to ACR'
+            displayName: 'Build & Push Images to Shared ACR'
             inputs:
               azureSubscription: '$(azureServiceConnection)'
               scriptType: 'bash'
               scriptLocation: 'inlineScript'
               inlineScript: |
                 set -e
-                echo "Authenticating Docker to ACR: $(acrName)..."
+                echo "Authenticating Docker to shared ACR: $(acrName)..."
                 az acr login --name $(acrName)
 
                 echo "Building Backend Container Image..."
                 docker build -t $(acrLoginServer)/eump-backend:$(tag) \
-                             -t $(acrLoginServer)/eump-backend:latest \
                              -f backend/Dockerfile backend
 
                 echo "Pushing Backend Container Image..."
                 docker push $(acrLoginServer)/eump-backend:$(tag)
-                docker push $(acrLoginServer)/eump-backend:latest
 
                 echo "Building Frontend Container Image..."
                 docker build -t $(acrLoginServer)/eump-frontend:$(tag) \
-                             -t $(acrLoginServer)/eump-frontend:latest \
                              -f frontend/enterprise-user-management-ui/Dockerfile frontend/enterprise-user-management-ui
 
                 echo "Pushing Frontend Container Image..."
                 docker push $(acrLoginServer)/eump-frontend:$(tag)
-                docker push $(acrLoginServer)/eump-frontend:latest
 
-                echo "Container images pushed successfully with immutable tag $(tag) and latest."
+                echo "Container images pushed successfully with immutable tag $(tag)."
 
           - task: PublishPipelineArtifact@1
-            displayName: 'Publish Kubernetes Manifests Artifact'
+            displayName: 'Publish Kustomize Manifests Artifact'
             inputs:
-              targetPath: '$(Build.SourcesDirectory)/kubernetes'
+              targetPath: '$(Build.SourcesDirectory)/k8s'
               artifact: 'manifests'
 
 # ===============================================================================
 # STAGE 2: CONTINUOUS DELIVERY - DEV ENVIRONMENT
-# - Automatically deploys to dev namespace (eump-dev) upon successful CI build
-# - Uses Development configuration (detailed logging, Swagger/Scalar enabled)
+# - Targets AKS Cluster: 'aks-eump-dev' (Namespace: 'dev')
+# - Deploys via Kustomize overlay (k8s/overlays/dev)
+# - Cost-effective resource allocations, Swagger enabled, Dev database & Key Vault
 # ===============================================================================
   - stage: DeployToDev
-    displayName: 'CD: Deploy to Dev Environment'
+    displayName: 'CD: Deploy to Dev Cluster (aks-eump-dev)'
     dependsOn: BuildAndTest
     condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
     jobs:
       - deployment: DeployDev
-        displayName: 'Deploy to Dev AKS Namespace'
+        displayName: 'Deploy to aks-eump-dev (Namespace: dev)'
         environment: 'eump-dev'
         strategy:
           runOnce:
@@ -186,10 +188,10 @@ stages:
               steps:
                 - download: current
                   artifact: 'manifests'
-                  displayName: 'Download Kubernetes Manifests'
+                  displayName: 'Download Kustomize Manifests'
 
                 - task: AzureCLI@2
-                  displayName: 'Deploy EUMP to Dev Environment'
+                  displayName: 'Apply Kustomize Overlay to Dev AKS'
                   inputs:
                     azureSubscription: '$(azureServiceConnection)'
                     scriptType: 'bash'
@@ -205,140 +207,55 @@ stages:
                       echo "1. Ensuring Namespace $TARGET_NS exists..."
                       kubectl create namespace $TARGET_NS --dry-run=client -o yaml | kubectl apply -f -
 
-                      echo "2. Checking Azure Key Vault Secrets Provider add-on on AKS..."
-                      if ! kubectl get crd secretproviderclasses.secrets-store.csi.x-k8s.io >/dev/null 2>&1; then
-                        echo "Secrets Store CSI Driver CRD not found. Enabling addon on AKS..."
-                        az aks enable-addons --addons azure-keyvault-secrets-provider --name $(devAksCluster) --resource-group $(devResourceGroup)
-                      fi
+                      echo "2. Updating image tags in Dev Kustomize overlay..."
+                      cd "$MANIFEST_DIR/overlays/dev"
+                      
+                      # Update image tags and ACR login server in kustomization.yaml
+                      sed -i "s|newTag:.*|newTag: $(tag)|g" kustomization.yaml
+                      sed -i "s|newName:.*eump-backend|newName: $(acrLoginServer)/eump-backend|g" kustomization.yaml
+                      sed -i "s|newName:.*eump-frontend|newName: $(acrLoginServer)/eump-frontend|g" kustomization.yaml
+                      sed -i "s|keyvaultName:.*|keyvaultName: \"$(devKeyVaultName)\"|g" secret-provider-class.yaml
 
-                      echo "3. Configuring Managed Identity permissions for Azure Key Vault..."
-                      KUBELET_CLIENT_ID=$(az aks show --resource-group $(devResourceGroup) --name $(devAksCluster) --query "identityProfile.kubeletidentity.clientId" -o tsv 2>/dev/null || true)
-                      ADDON_CLIENT_ID=$(az aks show --resource-group $(devResourceGroup) --name $(devAksCluster) --query "addonProfiles.azureKeyvaultSecretsProvider.identity.clientId" -o tsv 2>/dev/null || true)
-                      CSI_CLIENT_ID="${ADDON_CLIENT_ID:-$KUBELET_CLIENT_ID}"
+                      echo "3. Validating Kustomize build for Dev..."
+                      kubectl kustomize .
 
-                      KV_ID=$(az keyvault show --name $(keyVaultName) --resource-group $(devResourceGroup) --query id -o tsv 2>/dev/null || true)
-                      for CID in "$ADDON_CLIENT_ID" "$KUBELET_CLIENT_ID"; do
-                        if [ -n "$CID" ] && [ "$CID" != "null" ]; then
-                          echo "Assigning Key Vault permissions to Managed Identity $CID..."
-                          az role assignment create --role "Key Vault Secrets User" --assignee "$CID" --scope "$KV_ID" 2>/dev/null || true
-                          az keyvault set-policy --name $(keyVaultName) --spn "$CID" --secret-permissions get list 2>/dev/null || true
-                        fi
-                      done
+                      echo "4. Applying Dev Kustomize overlay..."
+                      kubectl apply -k .
 
-                      echo "4. Ensuring SqlConnectionString exists in Key Vault..."
-                      if ! az keyvault secret show --vault-name "$(keyVaultName)" --name "SqlConnectionString" >/dev/null 2>&1; then
-                        echo "Creating SqlConnectionString secret in Key Vault $(keyVaultName)..."
-                        az keyvault secret set --vault-name "$(keyVaultName)" --name "SqlConnectionString" \
-                          --value "Server=tcp:eump-sql-nagarajan.database.windows.net,1433;Initial Catalog=enterprise-user-db;Persist Security Info=False;User ID=sqladmin;Password=AdminSecureP@ss2026!;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;" >/dev/null 2>&1 || true
-                      fi
+                      echo "5. Waiting for Dev Backend rollout..."
+                      kubectl rollout status deployment/backend-deployment -n $TARGET_NS --timeout=180s
 
-                      echo "5. Ensuring AKS can pull images from ACR $(acrName)..."
-                      ACR_ID=$(az acr show --name $(acrName) --resource-group $(devResourceGroup) --query id -o tsv 2>/dev/null || true)
-                      if [ -n "$ACR_ID" ] && [ -n "$KUBELET_CLIENT_ID" ]; then
-                        az role assignment create --role "AcrPull" --assignee "$KUBELET_CLIENT_ID" --scope "$ACR_ID" 2>/dev/null || true
-                      fi
+                      echo "6. Waiting for Dev Frontend rollout..."
+                      kubectl rollout status deployment/frontend-deployment -n $TARGET_NS --timeout=180s
 
-                      echo "6. Ensuring Azure SQL allows connections from Azure services..."
-                      az sql server firewall-rule create \
-                        --resource-group $(devResourceGroup) \
-                        --server "eump-sql-nagarajan" \
-                        --name "AllowAllWindowsAzureIps" \
-                        --start-ip-address "0.0.0.0" \
-                        --end-ip-address "0.0.0.0" 2>/dev/null || true
-
-                      echo "7. Applying Dev ConfigMap, SecretProviderClass & Secret..."
-                      kubectl apply -f "$MANIFEST_DIR/02-configmap-dev.yaml" -n $TARGET_NS
-                      TENANT_ID=$(az account show --query tenantId -o tsv)
-                      sed -e "s|keyvaultName:.*|keyvaultName: \"$(keyVaultName)\"|g" \
-                          -e "s|tenantId:.*|tenantId: \"$TENANT_ID\"|g" \
-                          -e "s|userAssignedIdentityID:.*|userAssignedIdentityID: \"$CSI_CLIENT_ID\"|g" \
-                        "$MANIFEST_DIR/03-secret-provider-class.yaml" | kubectl apply -f - -n $TARGET_NS
-                      kubectl apply -f "$MANIFEST_DIR/03-secret.yaml" -n $TARGET_NS
-
-                      echo "8. Deploying Backend with image $(acrLoginServer)/eump-backend:$(tag) (Replicas: 1 for Dev)..."
-                      sed -e "s|image:\s*eump-backend:latest|image: $(acrLoginServer)/eump-backend:$(tag)|g" \
-                          -e "s|replicas:\s*2|replicas: 1|g" \
-                        "$MANIFEST_DIR/04-backend-deployment.yaml" | kubectl apply -f - -n $TARGET_NS
-
-                      echo "9. Applying Backend ClusterIP Service..."
-                      kubectl apply -f "$MANIFEST_DIR/05-backend-service.yaml" -n $TARGET_NS
-
-                      echo "10. Deploying Frontend with image $(acrLoginServer)/eump-frontend:$(tag) (Replicas: 1 for Dev)..."
-                      sed -e "s|image:\s*eump-frontend:latest|image: $(acrLoginServer)/eump-frontend:$(tag)|g" \
-                          -e "s|replicas:\s*2|replicas: 1|g" \
-                        "$MANIFEST_DIR/06-frontend-deployment.yaml" | kubectl apply -f - -n $TARGET_NS
-
-                      echo "11. Applying Frontend LoadBalancer Service..."
-                      kubectl apply -f "$MANIFEST_DIR/07-frontend-service.yaml" -n $TARGET_NS
-
-                      echo "12. Applying Ingress..."
-                      kubectl apply -f "$MANIFEST_DIR/08-ingress.yaml" -n $TARGET_NS
-
-                      echo "13. Applying Frontend Horizontal Pod Autoscaler (min: 1, max: 4 for Dev)..."
-                      sed -e "s|minReplicas:\s*2|minReplicas: 1|g" \
-                          -e "s|maxReplicas:\s*8|maxReplicas: 4|g" \
-                        "$MANIFEST_DIR/09-frontend-hpa.yaml" | kubectl apply -f - -n $TARGET_NS
-
-                      echo "14. Applying Backend Horizontal Pod Autoscaler (min: 1, max: 4 for Dev)..."
-                      sed -e "s|minReplicas:\s*2|minReplicas: 1|g" \
-                          -e "s|maxReplicas:\s*8|maxReplicas: 4|g" \
-                        "$MANIFEST_DIR/10-backend-hpa.yaml" | kubectl apply -f - -n $TARGET_NS
-
-                      echo "Waiting for Dev Backend rollout..."
-                      if ! kubectl rollout status deployment/backend-deployment -n $TARGET_NS --timeout=180s; then
-                        echo "##[error]Backend deployment rollout failed or timed out! Gathering diagnostics..."
-                        echo "=== Pods in $TARGET_NS ==="
-                        kubectl get pods -n $TARGET_NS -o wide
-                        echo "=== Backend Deployment Status ==="
-                        kubectl describe deployment/backend-deployment -n $TARGET_NS
-                        echo "=== Backend Pod Details & Events ==="
-                        kubectl describe pods -l app.kubernetes.io/component=backend -n $TARGET_NS
-                        echo "=== Backend Pod Logs ==="
-                        kubectl logs -l app.kubernetes.io/component=backend -n $TARGET_NS --tail=100 || true
-                        exit 1
-                      fi
-
-                      echo "Waiting for Dev Frontend rollout..."
-                      if ! kubectl rollout status deployment/frontend-deployment -n $TARGET_NS --timeout=180s; then
-                        echo "##[error]Frontend deployment rollout failed or timed out! Gathering diagnostics..."
-                        echo "=== Pods in $TARGET_NS ==="
-                        kubectl get pods -n $TARGET_NS -o wide
-                        echo "=== Frontend Deployment Status ==="
-                        kubectl describe deployment/frontend-deployment -n $TARGET_NS
-                        echo "=== Frontend Pod Details & Events ==="
-                        kubectl describe pods -l app.kubernetes.io/component=frontend -n $TARGET_NS
-                        echo "=== Frontend Pod Logs ==="
-                        kubectl logs -l app.kubernetes.io/component=frontend -n $TARGET_NS --tail=100 || true
-                        exit 1
-                      fi
-
-                      echo "Dev deployment succeeded! Dev Resources:"
-                      kubectl get svc,pods,pvc,hpa -n $TARGET_NS
+                      echo "Dev deployment succeeded! Deployed resources:"
+                      kubectl get svc,pods,hpa,ingress -n $TARGET_NS
 
 # ===============================================================================
 # STAGE 3: CONTINUOUS DELIVERY - PROD ENVIRONMENT
-# - Runs only after Dev deployment succeeds
-# - Targets 'eump-prod' environment (requires approval gate in Azure DevOps)
-# - Uses Production configuration (optimized logging, 2 frontend replicas for HA)
+# - Targets AKS Cluster: 'aks-eump-prod' (Namespace: 'prod')
+# - Deploys via Kustomize overlay (k8s/overlays/prod)
+# - Requires Manual Approval Gate configured on Azure DevOps Environment 'eump-prod'
+# - High Availability: Multi-replica, PDB, Network Policies, Startup Probes, TLS Ingress
 # ===============================================================================
   - stage: DeployToProd
-    displayName: 'CD: Deploy to Production Environment'
+    displayName: 'CD: Deploy to Production Cluster (aks-eump-prod)'
     dependsOn: DeployToDev
     condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
     jobs:
       - deployment: DeployProduction
-        displayName: 'Deploy to Production AKS Namespace'
-        environment: 'eump-prod'
+        displayName: 'Deploy to aks-eump-prod (Namespace: prod)'
+        environment: 'eump-prod' # Configured with manual approval gate in Azure DevOps
         strategy:
           runOnce:
             deploy:
               steps:
                 - download: current
                   artifact: 'manifests'
-                  displayName: 'Download Kubernetes Manifests'
+                  displayName: 'Download Kustomize Manifests'
 
                 - task: AzureCLI@2
-                  displayName: 'Deploy EUMP to Production Environment'
+                  displayName: 'Apply Kustomize Overlay to Production AKS'
                   inputs:
                     azureSubscription: '$(azureServiceConnection)'
                     scriptType: 'bash'
@@ -354,106 +271,26 @@ stages:
                       echo "1. Ensuring Namespace $TARGET_NS exists..."
                       kubectl create namespace $TARGET_NS --dry-run=client -o yaml | kubectl apply -f -
 
-                      echo "2. Checking Azure Key Vault Secrets Provider add-on on AKS..."
-                      if ! kubectl get crd secretproviderclasses.secrets-store.csi.x-k8s.io >/dev/null 2>&1; then
-                        echo "Secrets Store CSI Driver CRD not found. Enabling addon on AKS..."
-                        az aks enable-addons --addons azure-keyvault-secrets-provider --name $(prodAksCluster) --resource-group $(prodResourceGroup)
-                      fi
+                      echo "2. Updating image tags in Production Kustomize overlay..."
+                      cd "$MANIFEST_DIR/overlays/prod"
 
-                      echo "3. Configuring Managed Identity permissions for Azure Key Vault..."
-                      KUBELET_CLIENT_ID=$(az aks show --resource-group $(prodResourceGroup) --name $(prodAksCluster) --query "identityProfile.kubeletidentity.clientId" -o tsv 2>/dev/null || true)
-                      ADDON_CLIENT_ID=$(az aks show --resource-group $(prodResourceGroup) --name $(prodAksCluster) --query "addonProfiles.azureKeyvaultSecretsProvider.identity.clientId" -o tsv 2>/dev/null || true)
-                      CSI_CLIENT_ID="${ADDON_CLIENT_ID:-$KUBELET_CLIENT_ID}"
+                      # Update image tags and ACR login server in kustomization.yaml
+                      sed -i "s|newTag:.*|newTag: $(tag)|g" kustomization.yaml
+                      sed -i "s|newName:.*eump-backend|newName: $(acrLoginServer)/eump-backend|g" kustomization.yaml
+                      sed -i "s|newName:.*eump-frontend|newName: $(acrLoginServer)/eump-frontend|g" kustomization.yaml
+                      sed -i "s|keyvaultName:.*|keyvaultName: \"$(prodKeyVaultName)\"|g" secret-provider-class.yaml
 
-                      KV_ID=$(az keyvault show --name $(keyVaultName) --resource-group $(prodResourceGroup) --query id -o tsv 2>/dev/null || true)
-                      for CID in "$ADDON_CLIENT_ID" "$KUBELET_CLIENT_ID"; do
-                        if [ -n "$CID" ] && [ "$CID" != "null" ]; then
-                          echo "Assigning Key Vault permissions to Managed Identity $CID..."
-                          az role assignment create --role "Key Vault Secrets User" --assignee "$CID" --scope "$KV_ID" 2>/dev/null || true
-                          az keyvault set-policy --name $(keyVaultName) --spn "$CID" --secret-permissions get list 2>/dev/null || true
-                        fi
-                      done
+                      echo "3. Validating Kustomize build for Production..."
+                      kubectl kustomize .
 
-                      echo "4. Ensuring SqlConnectionString exists in Key Vault..."
-                      if ! az keyvault secret show --vault-name "$(keyVaultName)" --name "SqlConnectionString" >/dev/null 2>&1; then
-                        echo "Creating SqlConnectionString secret in Key Vault $(keyVaultName)..."
-                        az keyvault secret set --vault-name "$(keyVaultName)" --name "SqlConnectionString" \
-                          --value "Server=tcp:eump-sql-nagarajan.database.windows.net,1433;Initial Catalog=enterprise-user-db;Persist Security Info=False;User ID=sqladmin;Password=AdminSecureP@ss2026!;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;" >/dev/null 2>&1 || true
-                      fi
+                      echo "4. Applying Production Kustomize overlay..."
+                      kubectl apply -k .
 
-                      echo "5. Ensuring AKS can pull images from ACR $(acrName)..."
-                      ACR_ID=$(az acr show --name $(acrName) --resource-group $(prodResourceGroup) --query id -o tsv 2>/dev/null || true)
-                      if [ -n "$ACR_ID" ] && [ -n "$KUBELET_CLIENT_ID" ]; then
-                        az role assignment create --role "AcrPull" --assignee "$KUBELET_CLIENT_ID" --scope "$ACR_ID" 2>/dev/null || true
-                      fi
+                      echo "5. Waiting for Production Backend rollout..."
+                      kubectl rollout status deployment/backend-deployment -n $TARGET_NS --timeout=240s
 
-                      echo "6. Ensuring Azure SQL allows connections from Azure services..."
-                      az sql server firewall-rule create \
-                        --resource-group $(prodResourceGroup) \
-                        --server "eump-sql-nagarajan" \
-                        --name "AllowAllWindowsAzureIps" \
-                        --start-ip-address "0.0.0.0" \
-                        --end-ip-address "0.0.0.0" 2>/dev/null || true
+                      echo "6. Waiting for Production Frontend rollout..."
+                      kubectl rollout status deployment/frontend-deployment -n $TARGET_NS --timeout=240s
 
-                      echo "7. Applying Production ConfigMap, SecretProviderClass & Secret..."
-                      kubectl apply -f "$MANIFEST_DIR/02-configmap-prod.yaml" -n $TARGET_NS
-                      TENANT_ID=$(az account show --query tenantId -o tsv)
-                      sed -e "s|keyvaultName:.*|keyvaultName: \"$(keyVaultName)\"|g" \
-                          -e "s|tenantId:.*|tenantId: \"$TENANT_ID\"|g" \
-                          -e "s|userAssignedIdentityID:.*|userAssignedIdentityID: \"$CSI_CLIENT_ID\"|g" \
-                        "$MANIFEST_DIR/03-secret-provider-class.yaml" | kubectl apply -f - -n $TARGET_NS
-                      kubectl apply -f "$MANIFEST_DIR/03-secret.yaml" -n $TARGET_NS
-
-                      echo "8. Deploying Backend with image $(acrLoginServer)/eump-backend:$(tag) (Replicas: 2 for HA)..."
-                      sed "s|image:\s*eump-backend:latest|image: $(acrLoginServer)/eump-backend:$(tag)|g" \
-                        "$MANIFEST_DIR/04-backend-deployment.yaml" | kubectl apply -f - -n $TARGET_NS
-
-                      echo "9. Applying Backend ClusterIP Service..."
-                      kubectl apply -f "$MANIFEST_DIR/05-backend-service.yaml" -n $TARGET_NS
-
-                      echo "10. Deploying Frontend with image $(acrLoginServer)/eump-frontend:$(tag) (Replicas: 2 for HA)..."
-                      sed "s|image:\s*eump-frontend:latest|image: $(acrLoginServer)/eump-frontend:$(tag)|g" \
-                        "$MANIFEST_DIR/06-frontend-deployment.yaml" | kubectl apply -f - -n $TARGET_NS
-
-                      echo "11. Applying Frontend LoadBalancer Service..."
-                      kubectl apply -f "$MANIFEST_DIR/07-frontend-service.yaml" -n $TARGET_NS
-
-                      echo "12. Applying Ingress..."
-                      kubectl apply -f "$MANIFEST_DIR/08-ingress.yaml" -n $TARGET_NS
-
-                      echo "13. Applying Frontend Horizontal Pod Autoscaler (min: 2, max: 8 for Prod)..."
-                      kubectl apply -f "$MANIFEST_DIR/09-frontend-hpa.yaml" -n $TARGET_NS
-
-                      echo "14. Applying Backend Horizontal Pod Autoscaler (min: 2, max: 8 for Prod)..."
-                      kubectl apply -f "$MANIFEST_DIR/10-backend-hpa.yaml" -n $TARGET_NS
-
-                      echo "Waiting for Production Backend rollout..."
-                      if ! kubectl rollout status deployment/backend-deployment -n $TARGET_NS --timeout=180s; then
-                        echo "##[error]Backend deployment rollout failed or timed out! Gathering diagnostics..."
-                        echo "=== Pods in $TARGET_NS ==="
-                        kubectl get pods -n $TARGET_NS -o wide
-                        echo "=== Backend Deployment Status ==="
-                        kubectl describe deployment/backend-deployment -n $TARGET_NS
-                        echo "=== Backend Pod Details & Events ==="
-                        kubectl describe pods -l app.kubernetes.io/component=backend -n $TARGET_NS
-                        echo "=== Backend Pod Logs ==="
-                        kubectl logs -l app.kubernetes.io/component=backend -n $TARGET_NS --tail=100 || true
-                        exit 1
-                      fi
-
-                      echo "Waiting for Production Frontend rollout..."
-                      if ! kubectl rollout status deployment/frontend-deployment -n $TARGET_NS --timeout=180s; then
-                        echo "##[error]Frontend deployment rollout failed or timed out! Gathering diagnostics..."
-                        echo "=== Pods in $TARGET_NS ==="
-                        kubectl get pods -n $TARGET_NS -o wide
-                        echo "=== Frontend Deployment Status ==="
-                        kubectl describe deployment/frontend-deployment -n $TARGET_NS
-                        echo "=== Frontend Pod Details & Events ==="
-                        kubectl describe pods -l app.kubernetes.io/component=frontend -n $TARGET_NS
-                        echo "=== Frontend Pod Logs ==="
-                        kubectl logs -l app.kubernetes.io/component=frontend -n $TARGET_NS --tail=100 || true
-                        exit 1
-                      fi
-
-                      echo "Production deployment succeeded! Production Resources:"
-                      kubectl get svc,pods,pvc,hpa -n $TARGET_NS
+                      echo "Production deployment succeeded! Deployed resources:"
+                      kubectl get svc,pods,hpa,ingress,pdb,networkpolicy -n $TARGET_NS

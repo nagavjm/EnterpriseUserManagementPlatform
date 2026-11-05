@@ -68,10 +68,15 @@ EUMP includes production deployment support for **Azure Kubernetes Service (AKS)
 
 1. **Detailed Azure Portal Guide**: See [docs/aks-deployment-guide.md](docs/aks-deployment-guide.md) for step-by-step instructions on creating Resource Groups, ACR, and AKS clusters.
 2. **Automated CI/CD Deployment**: Deployed continuously via Azure DevOps pipelines (`azure-pipelines.yml`).
-3. **Manual CLI Deployment**:
+3. **Manual CLI Deployment (Kustomize)**:
 ```powershell
-az aks get-credentials --resource-group "rg-eump" --name "aks-eump"
-kubectl apply -f ./kubernetes/
+# Deploy to Development Cluster (aks-eump-dev)
+az aks get-credentials --resource-group "rg-eump-dev" --name "aks-eump-dev"
+kubectl apply -k ./k8s/overlays/dev/
+
+# Deploy to Production Cluster (aks-eump-prod)
+az aks get-credentials --resource-group "rg-eump-prod" --name "aks-eump-prod"
+kubectl apply -k ./k8s/overlays/prod/
 ```
 
 ---
