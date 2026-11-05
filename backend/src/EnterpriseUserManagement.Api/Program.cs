@@ -107,17 +107,17 @@ app.UseAuthorization();
 app.MapControllers();
 
 // 9. Startup initialization: Apply EF Core Code-First migrations only in Development or if explicitly enabled
-var applyMigrations = app.Environment.IsDevelopment() || builder.Configuration.GetValue<bool>("ApplyMigrationsOnStartup", false);
-if (applyMigrations)
+using (var scope = app.Services.CreateScope())
 {
-    using (var scope = app.Services.CreateScope())
-    {
-        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
 
-        try
+    try
+    {
+        if (dbContext.Database.IsRelational())
         {
-            if (dbContext.Database.IsRelational())
+            var applyMigrations = app.Environment.IsDevelopment() || builder.Configuration.GetValue<bool>("ApplyMigrationsOnStartup", false);
+            if (applyMigrations)
             {
                 logger.LogInformation("Applying EF Core migrations to Azure SQL database (Development mode)...");
                 var strategy = dbContext.Database.CreateExecutionStrategy();
@@ -129,20 +129,20 @@ if (applyMigrations)
             }
             else
             {
-                await dbContext.Database.EnsureCreatedAsync();
+                logger.LogInformation("Automatic EF Core migrations on startup are DISABLED for {Environment}. Migrations must be run via CI/CD release gate or dedicated DBA script.", app.Environment.EnvironmentName);
             }
         }
-        catch (Exception ex)
+        else
         {
-            logger.LogError(ex, "An error occurred while applying EF Core migrations / initializing database.");
-            throw;
+            // For in-memory database used during testing, ensure schema and seed data are initialized
+            await dbContext.Database.EnsureCreatedAsync();
         }
     }
-}
-else
-{
-    var logger = app.Services.GetRequiredService<ILogger<Program>>();
-    logger.LogInformation("Automatic EF Core migrations on startup are DISABLED for {Environment}. Migrations must be run via CI/CD release gate or dedicated DBA script.", app.Environment.EnvironmentName);
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "An error occurred while applying EF Core migrations / initializing database.");
+        throw;
+    }
 }
 
 app.Run();

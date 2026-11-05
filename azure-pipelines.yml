@@ -144,7 +144,12 @@ stages:
               inlineScript: |
                 set -e
                 echo "Authenticating Docker to shared ACR: $(acrName)..."
-                az acr login --name $(acrName)
+                ACR_TOKEN=$(az acr login --name $(acrName) --expose-token --output tsv --query accessToken 2>/dev/null || true)
+                if [ -n "$ACR_TOKEN" ]; then
+                  echo "$ACR_TOKEN" | docker login $(acrLoginServer) -u 00000000-0000-0000-0000-000000000000 --password-stdin
+                else
+                  az acr login --name $(acrName)
+                fi
 
                 echo "Building Backend Container Image..."
                 docker build -t $(acrLoginServer)/eump-backend:$(tag) \
