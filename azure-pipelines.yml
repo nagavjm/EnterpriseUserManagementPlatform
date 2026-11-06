@@ -220,8 +220,6 @@ stages:
                         --set frontend.image.repository="$(acrLoginServer)/eump-frontend" \
                         --set frontend.image.tag="$(tag)" \
                         --set azureKeyVault.name="$(devKeyVaultName)" \
-                        --take-ownership \
-                        --force-conflicts \
                         --wait \
                         --timeout 5m
 
@@ -276,8 +274,6 @@ stages:
                         --set frontend.image.repository="$(acrLoginServer)/eump-frontend" \
                         --set frontend.image.tag="$(tag)" \
                         --set azureKeyVault.name="$(prodKeyVaultName)" \
-                        --take-ownership \
-                        --force-conflicts \
                         --wait \
                         --timeout 6m
 
