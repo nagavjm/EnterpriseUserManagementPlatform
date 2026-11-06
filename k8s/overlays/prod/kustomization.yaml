@@ -14,6 +14,7 @@ resources:
 patches:
   - path: patches/backend-patch.yaml
   - path: patches/frontend-patch.yaml
+  - path: patches/frontend-service-patch.yaml
   - path: patches/ingress-patch.yaml
   - path: patches/hpa-patch.yaml
 
