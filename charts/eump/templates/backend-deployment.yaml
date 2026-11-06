@@ -1,0 +1,85 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-deployment
+  labels:
+    {{- include "eump.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  replicas: {{ .Values.backend.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: enterprise-user-management-platform
+      app.kubernetes.io/component: backend
+  template:
+    metadata:
+      labels:
+        {{- include "eump.labels" . | nindent 8 }}
+        app.kubernetes.io/component: backend
+    spec:
+      {{- with .Values.backend.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.backend.terminationGracePeriodSeconds | default 60 }}
+      containers:
+        - name: backend
+          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy | default "IfNotPresent" }}
+          {{- with .Values.backend.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: 5100
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: eump-config
+            - secretRef:
+                name: eump-secret
+          resources:
+            {{- toYaml .Values.backend.resources | nindent 12 }}
+          volumeMounts:
+            - name: secrets-store-inline
+              mountPath: /mnt/secrets-store
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5100
+            initialDelaySeconds: {{ .Values.backend.livenessProbe.initialDelaySeconds | default 30 }}
+            periodSeconds: {{ .Values.backend.livenessProbe.periodSeconds | default 20 }}
+            timeoutSeconds: {{ .Values.backend.livenessProbe.timeoutSeconds | default 5 }}
+            failureThreshold: {{ .Values.backend.livenessProbe.failureThreshold | default 3 }}
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 5100
+            initialDelaySeconds: {{ .Values.backend.readinessProbe.initialDelaySeconds | default 15 }}
+            periodSeconds: {{ .Values.backend.readinessProbe.periodSeconds | default 10 }}
+            timeoutSeconds: {{ .Values.backend.readinessProbe.timeoutSeconds | default 5 }}
+            failureThreshold: {{ .Values.backend.readinessProbe.failureThreshold | default 3 }}
+          {{- if .Values.backend.startupProbe.enabled }}
+          startupProbe:
+            httpGet:
+              path: /health/ready
+              port: 5100
+            initialDelaySeconds: {{ .Values.backend.startupProbe.initialDelaySeconds | default 5 }}
+            periodSeconds: {{ .Values.backend.startupProbe.periodSeconds | default 5 }}
+            timeoutSeconds: {{ .Values.backend.startupProbe.timeoutSeconds | default 3 }}
+            failureThreshold: {{ .Values.backend.startupProbe.failureThreshold | default 30 }}
+          {{- end }}
+      volumes:
+        - name: secrets-store-inline
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: azure-kv-eump-secret-provider

@@ -1,0 +1,57 @@
+# Dev Environment Values Override for eump Chart
+environment: dev
+
+azureKeyVault:
+  name: kv-eump-dev
+  tenantId: "6941c60f-c45a-44be-b714-9c5587e240c0"
+  userAssignedIdentityID: "5e9f1ed2-30e1-4348-8f48-a67367a5626e"
+
+backend:
+  replicaCount: 1
+  config:
+    aspnetcoreEnvironment: Development
+    applyMigrationsOnStartup: "true"
+    enableSwagger: "true"
+    enableHttpsRedirection: "false"
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+frontend:
+  replicaCount: 1
+  service:
+    type: LoadBalancer
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+autoscaling:
+  enabled: true
+  backend:
+    minReplicas: 1
+    maxReplicas: 3
+  frontend:
+    minReplicas: 1
+    maxReplicas: 3
+
+ingress:
+  enabled: false
+  hosts:
+    - host: dev.eump.contoso.com
+
+networkPolicy:
+  enabled: false
+
+podDisruptionBudget:
+  enabled: false
+
+migrationJob:
+  enabled: false

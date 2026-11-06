@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  labels:
+    {{- include "eump.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+  {{- with .Values.frontend.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.frontend.service.type | default "LoadBalancer" }}
+  selector:
+    app.kubernetes.io/name: enterprise-user-management-platform
+    app.kubernetes.io/component: frontend
+  ports:
+    - name: http
+      port: {{ .Values.frontend.service.port | default 80 }}
+      targetPort: {{ .Values.frontend.service.targetPort | default 80 }}
+      protocol: TCP

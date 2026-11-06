@@ -1,0 +1,14 @@
+apiVersion: v2
+name: eump
+description: Enterprise User Management Platform Helm Chart (Angular 19 SPA + .NET 9 Web API)
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+maintainers:
+  - name: DevSecOps Team
+    email: devops@contoso.com
+keywords:
+  - enterprise-user-management
+  - dotnet
+  - angular
+  - azure-aks

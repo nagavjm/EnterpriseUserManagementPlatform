@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-deployment
+  labels:
+    {{- include "eump.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+spec:
+  replicas: {{ .Values.frontend.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: enterprise-user-management-platform
+      app.kubernetes.io/component: frontend
+  template:
+    metadata:
+      labels:
+        {{- include "eump.labels" . | nindent 8 }}
+        app.kubernetes.io/component: frontend
+    spec:
+      {{- with .Values.frontend.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.frontend.terminationGracePeriodSeconds | default 30 }}
+      containers:
+        - name: frontend
+          image: "{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag }}"
+          imagePullPolicy: {{ .Values.frontend.image.pullPolicy | default "IfNotPresent" }}
+          {{- with .Values.frontend.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+          resources:
+            {{- toYaml .Values.frontend.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: {{ .Values.frontend.livenessProbe.initialDelaySeconds | default 10 }}
+            periodSeconds: {{ .Values.frontend.livenessProbe.periodSeconds | default 15 }}
+            timeoutSeconds: {{ .Values.frontend.livenessProbe.timeoutSeconds | default 3 }}
+            failureThreshold: {{ .Values.frontend.livenessProbe.failureThreshold | default 3 }}
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: {{ .Values.frontend.readinessProbe.initialDelaySeconds | default 5 }}
+            periodSeconds: {{ .Values.frontend.readinessProbe.periodSeconds | default 10 }}
+            timeoutSeconds: {{ .Values.frontend.readinessProbe.timeoutSeconds | default 3 }}
+            failureThreshold: {{ .Values.frontend.readinessProbe.failureThreshold | default 3 }}

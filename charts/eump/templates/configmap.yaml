@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: eump-config
+  labels:
+    {{- include "eump.labels" . | nindent 4 }}
+data:
+  ASPNETCORE_ENVIRONMENT: {{ .Values.backend.config.aspnetcoreEnvironment | quote }}
+  ASPNETCORE_URLS: {{ .Values.backend.config.aspnetcoreUrls | default "http://+:5100" | quote }}
+  ApplyMigrationsOnStartup: {{ .Values.backend.config.applyMigrationsOnStartup | quote }}
+  EnableSwagger: {{ .Values.backend.config.enableSwagger | quote }}
+  EnableHttpsRedirection: {{ .Values.backend.config.enableHttpsRedirection | quote }}
+  ASPNETCORE_FORWARDEDHEADERS_ENABLED: {{ .Values.backend.config.forwardedHeadersEnabled | default "true" | quote }}

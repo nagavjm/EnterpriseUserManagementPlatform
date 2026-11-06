@@ -168,15 +168,15 @@ stages:
                 echo "Container images pushed successfully with immutable tag $(tag)."
 
           - task: PublishPipelineArtifact@1
-            displayName: 'Publish Kustomize Manifests Artifact'
+            displayName: 'Publish Helm Chart Artifact'
             inputs:
-              targetPath: '$(Build.SourcesDirectory)/k8s'
-              artifact: 'manifests'
+              targetPath: '$(Build.SourcesDirectory)/charts'
+              artifact: 'charts'
 
 # ===============================================================================
 # STAGE 2: CONTINUOUS DELIVERY - DEV ENVIRONMENT
 # - Targets AKS Cluster: 'aks-eump-dev' (Namespace: 'dev')
-# - Deploys via Kustomize overlay (k8s/overlays/dev)
+# - Deploys via Helm Chart (charts/eump with values-dev.yaml)
 # - Cost-effective resource allocations, Swagger enabled, Dev database & Key Vault
 # ===============================================================================
   - stage: DeployToDev
@@ -192,54 +192,46 @@ stages:
             deploy:
               steps:
                 - download: current
-                  artifact: 'manifests'
-                  displayName: 'Download Kustomize Manifests'
+                  artifact: 'charts'
+                  displayName: 'Download Helm Chart Artifact'
 
                 - task: AzureCLI@2
-                  displayName: 'Apply Kustomize Overlay to Dev AKS'
+                  displayName: 'Deploy to Dev AKS via Helm'
                   inputs:
                     azureSubscription: '$(azureServiceConnection)'
                     scriptType: 'bash'
                     scriptLocation: 'inlineScript'
                     inlineScript: |
                       set -e
-                      MANIFEST_DIR="$(Pipeline.Workspace)/manifests"
+                      CHART_DIR="$(Pipeline.Workspace)/charts/eump"
                       TARGET_NS="$(devNamespace)"
 
-                      echo "Connecting kubectl to Dev AKS cluster $(devAksCluster)..."
+                      echo "Connecting kubectl and Helm to Dev AKS cluster $(devAksCluster)..."
                       az aks get-credentials --resource-group $(devResourceGroup) --name $(devAksCluster) --overwrite-existing
 
-                      echo "1. Ensuring Namespace $TARGET_NS exists..."
-                      kubectl create namespace $TARGET_NS --dry-run=client -o yaml | kubectl apply -f -
-
-                      echo "2. Updating image tags in Dev Kustomize overlay..."
-                      cd "$MANIFEST_DIR/overlays/dev"
-                      
-                      # Update image tags and ACR login server in kustomization.yaml
-                      sed -i "s|newTag:.*|newTag: \"$(tag)\"|g" kustomization.yaml
-                      sed -i "s|newName:.*eump-backend|newName: $(acrLoginServer)/eump-backend|g" kustomization.yaml
-                      sed -i "s|newName:.*eump-frontend|newName: $(acrLoginServer)/eump-frontend|g" kustomization.yaml
-                      sed -i "s|keyvaultName:.*|keyvaultName: \"$(devKeyVaultName)\"|g" secret-provider-class.yaml
-
-                      echo "3. Validating Kustomize build for Dev..."
-                      kubectl kustomize .
-
-                      echo "4. Applying Dev Kustomize overlay..."
-                      kubectl apply -k .
-
-                      echo "5. Waiting for Dev Backend rollout..."
-                      kubectl rollout status deployment/backend-deployment -n $TARGET_NS --timeout=180s
-
-                      echo "6. Waiting for Dev Frontend rollout..."
-                      kubectl rollout status deployment/frontend-deployment -n $TARGET_NS --timeout=180s
+                      echo "Deploying Enterprise User Management Platform to $TARGET_NS via Helm..."
+                      helm upgrade --install eump "$CHART_DIR" \
+                        --namespace "$TARGET_NS" \
+                        --create-namespace \
+                        -f "$CHART_DIR/values.yaml" \
+                        -f "$CHART_DIR/values-dev.yaml" \
+                        --set backend.image.repository="$(acrLoginServer)/eump-backend" \
+                        --set backend.image.tag="$(tag)" \
+                        --set frontend.image.repository="$(acrLoginServer)/eump-frontend" \
+                        --set frontend.image.tag="$(tag)" \
+                        --set azureKeyVault.name="$(devKeyVaultName)" \
+                        --take-ownership \
+                        --force-conflicts \
+                        --wait \
+                        --timeout 5m
 
                       echo "Dev deployment succeeded! Deployed resources:"
-                      kubectl get svc,pods,hpa,ingress -n $TARGET_NS
+                      kubectl get svc,pods,hpa,ingress -n "$TARGET_NS"
 
 # ===============================================================================
 # STAGE 3: CONTINUOUS DELIVERY - PROD ENVIRONMENT
 # - Targets AKS Cluster: 'aks-eump-prod' (Namespace: 'prod')
-# - Deploys via Kustomize overlay (k8s/overlays/prod)
+# - Deploys via Helm Chart (charts/eump with values-prod.yaml)
 # - Requires Manual Approval Gate configured on Azure DevOps Environment 'eump-prod'
 # - High Availability: Multi-replica, PDB, Network Policies, Startup Probes, TLS Ingress
 # ===============================================================================
@@ -256,46 +248,38 @@ stages:
             deploy:
               steps:
                 - download: current
-                  artifact: 'manifests'
-                  displayName: 'Download Kustomize Manifests'
+                  artifact: 'charts'
+                  displayName: 'Download Helm Chart Artifact'
 
                 - task: AzureCLI@2
-                  displayName: 'Apply Kustomize Overlay to Production AKS'
+                  displayName: 'Deploy to Production AKS via Helm'
                   inputs:
                     azureSubscription: '$(azureServiceConnection)'
                     scriptType: 'bash'
                     scriptLocation: 'inlineScript'
                     inlineScript: |
                       set -e
-                      MANIFEST_DIR="$(Pipeline.Workspace)/manifests"
+                      CHART_DIR="$(Pipeline.Workspace)/charts/eump"
                       TARGET_NS="$(prodNamespace)"
 
-                      echo "Connecting kubectl to Production AKS cluster $(prodAksCluster)..."
+                      echo "Connecting kubectl and Helm to Production AKS cluster $(prodAksCluster)..."
                       az aks get-credentials --resource-group $(prodResourceGroup) --name $(prodAksCluster) --overwrite-existing
 
-                      echo "1. Ensuring Namespace $TARGET_NS exists..."
-                      kubectl create namespace $TARGET_NS --dry-run=client -o yaml | kubectl apply -f -
-
-                      echo "2. Updating image tags in Production Kustomize overlay..."
-                      cd "$MANIFEST_DIR/overlays/prod"
-
-                      # Update image tags and ACR login server in kustomization.yaml
-                      sed -i "s|newTag:.*|newTag: \"$(tag)\"|g" kustomization.yaml
-                      sed -i "s|newName:.*eump-backend|newName: $(acrLoginServer)/eump-backend|g" kustomization.yaml
-                      sed -i "s|newName:.*eump-frontend|newName: $(acrLoginServer)/eump-frontend|g" kustomization.yaml
-                      sed -i "s|keyvaultName:.*|keyvaultName: \"$(prodKeyVaultName)\"|g" secret-provider-class.yaml
-
-                      echo "3. Validating Kustomize build for Production..."
-                      kubectl kustomize .
-
-                      echo "4. Applying Production Kustomize overlay..."
-                      kubectl apply -k .
-
-                      echo "5. Waiting for Production Backend rollout..."
-                      kubectl rollout status deployment/backend-deployment -n $TARGET_NS --timeout=240s
-
-                      echo "6. Waiting for Production Frontend rollout..."
-                      kubectl rollout status deployment/frontend-deployment -n $TARGET_NS --timeout=240s
+                      echo "Deploying Enterprise User Management Platform to $TARGET_NS via Helm..."
+                      helm upgrade --install eump "$CHART_DIR" \
+                        --namespace "$TARGET_NS" \
+                        --create-namespace \
+                        -f "$CHART_DIR/values.yaml" \
+                        -f "$CHART_DIR/values-prod.yaml" \
+                        --set backend.image.repository="$(acrLoginServer)/eump-backend" \
+                        --set backend.image.tag="$(tag)" \
+                        --set frontend.image.repository="$(acrLoginServer)/eump-frontend" \
+                        --set frontend.image.tag="$(tag)" \
+                        --set azureKeyVault.name="$(prodKeyVaultName)" \
+                        --take-ownership \
+                        --force-conflicts \
+                        --wait \
+                        --timeout 6m
 
                       echo "Production deployment succeeded! Deployed resources:"
-                      kubectl get svc,pods,hpa,ingress,pdb,networkpolicy -n $TARGET_NS
+                      kubectl get svc,pods,hpa,ingress,pdb,networkpolicy -n "$TARGET_NS"

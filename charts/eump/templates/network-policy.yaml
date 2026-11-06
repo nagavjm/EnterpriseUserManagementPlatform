@@ -1,0 +1,92 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-network-policy
+  labels:
+    {{- include "eump.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: enterprise-user-management-platform
+      app.kubernetes.io/component: backend
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow traffic only from frontend pods within the same namespace
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: enterprise-user-management-platform
+              app.kubernetes.io/component: frontend
+      ports:
+        - protocol: TCP
+          port: 5100
+    # Allow traffic from ingress controller pods
+    - from:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 5100
+  egress:
+    # Allow DNS resolution
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Allow HTTPS egress (Azure Key Vault, Entra ID, Microsoft services)
+    - ports:
+        - protocol: TCP
+          port: 443
+    # Allow Azure SQL Database connections
+    - ports:
+        - protocol: TCP
+          port: 1433
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: frontend-network-policy
+  labels:
+    {{- include "eump.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: enterprise-user-management-platform
+      app.kubernetes.io/component: frontend
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow HTTP ingress from Ingress Controller or external load balancer
+    - ports:
+        - protocol: TCP
+          port: 80
+  egress:
+    # Allow DNS resolution
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Allow reverse proxy traffic to backend service
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: enterprise-user-management-platform
+              app.kubernetes.io/component: backend
+      ports:
+        - protocol: TCP
+          port: 5100
+{{- end }}

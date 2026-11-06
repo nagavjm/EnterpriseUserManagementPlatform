@@ -1,0 +1,99 @@
+# Production Environment Values Override for eump Chart
+environment: prod
+
+azureKeyVault:
+  name: kv-eump-prod
+  tenantId: "6941c60f-c45a-44be-b714-9c5587e240c0"
+  userAssignedIdentityID: "a0826218-ec29-448d-9834-3926dd8cc916"
+
+backend:
+  replicaCount: 2
+  config:
+    aspnetcoreEnvironment: Production
+    applyMigrationsOnStartup: "false"
+    enableSwagger: "false"
+    enableHttpsRedirection: "false"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  startupProbe:
+    enabled: true
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 30
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1654
+    runAsGroup: 1654
+    fsGroup: 1654
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+
+frontend:
+  replicaCount: 2
+  service:
+    type: LoadBalancer
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+      add:
+        - CHOWN
+        - SETUID
+        - SETGID
+        - NET_BIND_SERVICE
+
+autoscaling:
+  enabled: true
+  backend:
+    minReplicas: 2
+    maxReplicas: 8
+  frontend:
+    minReplicas: 2
+    maxReplicas: 8
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 10m
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: eump.contoso.com
+  tls:
+    - hosts:
+        - eump.contoso.com
+      secretName: eump-prod-tls
+
+networkPolicy:
+  enabled: true
+
+podDisruptionBudget:
+  enabled: true
+  backend:
+    minAvailable: 1
+  frontend:
+    minAvailable: 1
+
+migrationJob:
+  enabled: false
