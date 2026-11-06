@@ -104,12 +104,12 @@ public class UsersController : ControllerBase
     /// <summary>
     /// Simulates a fatal process/container crash for Kubernetes self-healing and restart policy testing.
     /// </summary>
-    [HttpGet("crash")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    public IActionResult SimulateCrash()
-    {
-        _logger.LogCritical("Simulating intentional process crash for Kubernetes self-healing test.");
-        Environment.FailFast("Intentional process termination triggered via /api/users/crash for Kubernetes testing.");
-        return Ok();
-    }
+    // [HttpGet("crash")]
+    // [ProducesResponseType(StatusCodes.Status200OK)]
+    // public IActionResult SimulateCrash()
+    // {
+    //     _logger.LogCritical("Simulating intentional process crash for Kubernetes self-healing test.");
+    //     Environment.FailFast("Intentional process termination triggered via /api/users/crash for Kubernetes testing.");
+    //     return Ok();
+    // }
 }
