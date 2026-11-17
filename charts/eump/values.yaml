@@ -111,3 +111,17 @@ podDisruptionBudget:
 
 migrationJob:
   enabled: false
+
+dotnetMonitor:
+  enabled: false
+  image:
+    repository: mcr.microsoft.com/dotnet/monitor
+    tag: "9.0"
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi

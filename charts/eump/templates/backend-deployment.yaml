@@ -44,12 +44,21 @@ spec:
                 name: eump-config
             - secretRef:
                 name: eump-secret
+          {{- if .Values.dotnetMonitor.enabled }}
+          env:
+            - name: DOTNET_DiagnosticPorts
+              value: "/diag/dotnet-monitor.sock"
+          {{- end }}
           resources:
             {{- toYaml .Values.backend.resources | nindent 12 }}
           volumeMounts:
             - name: secrets-store-inline
               mountPath: /mnt/secrets-store
               readOnly: true
+            {{- if .Values.dotnetMonitor.enabled }}
+            - name: diag-volume
+              mountPath: /diag
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /health
@@ -76,6 +85,36 @@ spec:
             timeoutSeconds: {{ .Values.backend.startupProbe.timeoutSeconds | default 3 }}
             failureThreshold: {{ .Values.backend.startupProbe.failureThreshold | default 30 }}
           {{- end }}
+        {{- if .Values.dotnetMonitor.enabled }}
+        - name: dotnet-monitor
+          image: "{{ .Values.dotnetMonitor.image.repository }}:{{ .Values.dotnetMonitor.image.tag }}"
+          imagePullPolicy: {{ .Values.dotnetMonitor.image.pullPolicy | default "IfNotPresent" }}
+          args:
+            - "collect"
+            - "--urls"
+            - "http://+:52323"
+            - "--no-auth"
+          env:
+            - name: DOTNETMONITOR_DiagnosticPort__ConnectionMode
+              value: "Listen"
+            - name: DOTNETMONITOR_DiagnosticPort__EndpointName
+              value: "/diag/dotnet-monitor.sock"
+            - name: DOTNETMONITOR_Storage__DefaultSharedPath
+              value: "/diag"
+            - name: DOTNETMONITOR_InProcessFeatures__Enabled
+              value: "true"
+            - name: DOTNETMONITOR_InProcessFeatures__CallStacks__Enabled
+              value: "true"
+          ports:
+            - name: monitor
+              containerPort: 52323
+              protocol: TCP
+          resources:
+            {{- toYaml .Values.dotnetMonitor.resources | nindent 12 }}
+          volumeMounts:
+            - name: diag-volume
+              mountPath: /diag
+        {{- end }}
       volumes:
         - name: secrets-store-inline
           csi:
@@ -83,3 +122,7 @@ spec:
             readOnly: true
             volumeAttributes:
               secretProviderClass: azure-kv-eump-secret-provider
+        {{- if .Values.dotnetMonitor.enabled }}
+        - name: diag-volume
+          emptyDir: {}
+        {{- end }}

@@ -97,3 +97,6 @@ podDisruptionBudget:
 
 migrationJob:
   enabled: false
+
+dotnetMonitor:
+  enabled: true
