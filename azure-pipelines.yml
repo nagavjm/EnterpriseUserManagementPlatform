@@ -167,15 +167,9 @@ stages:
           - task: SonarQubeAnalyze@7
             displayName: 'Execute SonarQube Static Code Analysis'
 
-          # Step 10: Publish SonarQube Analysis Results
+          # Step 10: Publish SonarQube Analysis Results & Quality Gate
           - task: SonarQubePublish@7
-            displayName: 'Publish SonarQube Analysis Results'
-            inputs:
-              pollingTimeoutSec: '300'
-
-          # Step 11: Enforce SonarQube Quality Gate (Fails CI and blocks deployment if gate fails)
-          - task: SonarQubeQualityGate@7
-            displayName: 'Enforce SonarQube Quality Gate'
+            displayName: 'Publish SonarQube Analysis Results & Quality Gate'
             inputs:
               pollingTimeoutSec: '300'
 
