@@ -138,14 +138,18 @@ stages:
 
           # Step 6: Generate HTML & Cobertura Coverage Reports via ReportGenerator
           - script: |
-              reportgenerator \
-                -reports:"$(Build.SourcesDirectory)/TestResults/Coverage/*.opencover.xml" \
-                -targetdir:"$(Build.SourcesDirectory)/CoverageReport" \
-                -reporttypes:"HtmlInline_AzurePipelines;Cobertura;Badges" \
-                -assemblyfilters:"-*.Tests;-*.UnitTests;-*.IntegrationTests" \
-                -classfilters:"-*.Migrations.*;-*ApplicationDbContextModelSnapshot"
+              if [ -d "$(Build.SourcesDirectory)/TestResults/Coverage" ] && [ "$(ls -A $(Build.SourcesDirectory)/TestResults/Coverage/*.opencover.xml 2>/dev/null)" ]; then
+                reportgenerator \
+                  -reports:"$(Build.SourcesDirectory)/TestResults/Coverage/*.opencover.xml" \
+                  -targetdir:"$(Build.SourcesDirectory)/CoverageReport" \
+                  -reporttypes:"HtmlInline_AzurePipelines;Cobertura;Badges" \
+                  -assemblyfilters:"-*.Tests;-*.UnitTests;-*.IntegrationTests" \
+                  -classfilters:"-*.Migrations.*;-*ApplicationDbContextModelSnapshot"
+              else
+                echo "No coverage files found, skipping ReportGenerator."
+              fi
             displayName: 'Generate HTML & Cobertura Coverage Reports'
-            condition: succeededOrFailed()
+            condition: succeeded()
 
           # Step 7: Publish Cobertura Results natively to Azure DevOps Code Coverage tab
           - task: PublishCodeCoverageResults@2
@@ -153,7 +157,7 @@ stages:
             inputs:
               summaryFileLocation: '$(Build.SourcesDirectory)/CoverageReport/Cobertura.xml'
               pathToSources: '$(Build.SourcesDirectory)/backend/src'
-            condition: succeededOrFailed()
+            condition: succeeded()
 
           # Step 8: Publish Interactive HTML Coverage Report as Pipeline Artifact
           - task: PublishPipelineArtifact@1
@@ -161,7 +165,7 @@ stages:
             inputs:
               targetPath: '$(Build.SourcesDirectory)/CoverageReport'
               artifact: 'CodeCoverageReport_HTML'
-            condition: succeededOrFailed()
+            condition: succeeded()
 
           # Step 9: Execute SonarQube Static Code Analysis
           - task: SonarQubeAnalyze@7
