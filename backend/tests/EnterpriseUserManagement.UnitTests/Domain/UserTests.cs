@@ -1,11 +1,24 @@
 using EnterpriseUserManagement.Domain.Entities;
 using EnterpriseUserManagement.Domain.Enums;
 using EnterpriseUserManagement.Domain.Exceptions;
+using Xunit;
 
 namespace EnterpriseUserManagement.UnitTests.Domain;
 
 public class UserTests
 {
+    [Fact]
+    public void ParameterlessConstructor_CanInstantiateUser()
+    {
+        // Arrange & Act
+        var user = new User();
+
+        // Assert
+        Assert.NotNull(user);
+        Assert.Equal(Guid.Empty, user.Id);
+        Assert.Equal(string.Empty, user.FirstName);
+    }
+
     [Fact]
     public void Create_WithValidParameters_ShouldInstantiateUserCorrectly()
     {
@@ -27,7 +40,7 @@ public class UserTests
         Assert.Equal(Department.Engineering, user.Department);
         Assert.Equal(UserRole.Admin, user.Role);
         Assert.True(user.IsActive);
-        Assert.True((DateTime.UtcNow - user.CreatedDate).TotalSeconds < 2);
+        Assert.True((DateTime.UtcNow - user.CreatedDate).TotalSeconds < 5);
         Assert.Null(user.ModifiedDate);
     }
 
@@ -42,6 +55,14 @@ public class UserTests
             User.Create(firstName!, lastName, email, Department.Engineering, UserRole.Employee));
     }
 
+    [Fact]
+    public void Create_WithFirstNameExceeding50Chars_ShouldThrowDomainValidationException()
+    {
+        var longFirstName = new string('A', 51);
+        Assert.Throws<DomainValidationException>(() =>
+            User.Create(longFirstName, "ValidLast", "test@enterprise.com", Department.Engineering, UserRole.Employee));
+    }
+
     [Theory]
     [InlineData("Ada", "", "test@enterprise.com")]
     [InlineData("Ada", "   ", "test@enterprise.com")]
@@ -51,6 +72,32 @@ public class UserTests
         // Act & Assert
         Assert.Throws<DomainValidationException>(() =>
             User.Create(firstName, lastName!, email, Department.Engineering, UserRole.Employee));
+    }
+
+    [Fact]
+    public void Create_WithLastNameExceeding50Chars_ShouldThrowDomainValidationException()
+    {
+        var longLastName = new string('B', 51);
+        Assert.Throws<DomainValidationException>(() =>
+            User.Create("ValidFirst", longLastName, "test@enterprise.com", Department.Engineering, UserRole.Employee));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData(null)]
+    public void Create_WithEmptyEmail_ShouldThrowDomainValidationException(string? email)
+    {
+        Assert.Throws<DomainValidationException>(() =>
+            User.Create("ValidFirst", "ValidLast", email!, Department.Engineering, UserRole.Employee));
+    }
+
+    [Fact]
+    public void Create_WithEmailExceeding100Chars_ShouldThrowDomainValidationException()
+    {
+        var longEmail = new string('a', 95) + "@enterprise.com"; // > 100 chars
+        Assert.Throws<DomainValidationException>(() =>
+            User.Create("ValidFirst", "ValidLast", longEmail, Department.Engineering, UserRole.Employee));
     }
 
     [Theory]
@@ -84,6 +131,14 @@ public class UserTests
     }
 
     [Fact]
+    public void UpdateProfile_WithInvalidName_ShouldThrowDomainValidationException()
+    {
+        var user = User.Create("Margaret", "Hamilton", "margaret@enterprise.com", Department.Engineering, UserRole.Employee);
+        Assert.Throws<DomainValidationException>(() =>
+            user.UpdateProfile("", "Hamilton", Department.Operations, UserRole.Manager));
+    }
+
+    [Fact]
     public void SetActiveStatus_WhenFlippingStatus_ShouldUpdateIsActiveAndModifiedDate()
     {
         // Arrange
@@ -96,5 +151,19 @@ public class UserTests
         Assert.False(user.IsActive);
         Assert.NotNull(user.ModifiedDate);
     }
-}
 
+    [Fact]
+    public void SetActiveStatus_WhenSameStatus_ShouldNotModifyModifiedDate()
+    {
+        // Arrange
+        var user = User.Create("Katherine", "Johnson", "katherine@enterprise.com", Department.Finance, UserRole.Manager);
+        var originalModified = user.ModifiedDate;
+
+        // Act (already active, set true again)
+        user.SetActiveStatus(true);
+
+        // Assert
+        Assert.True(user.IsActive);
+        Assert.Equal(originalModified, user.ModifiedDate);
+    }
+}

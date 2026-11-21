@@ -52,6 +52,13 @@ variables:
   nodeVersion: '20.x'
   tag: '$(Build.BuildId)'                       # Immutable unique image tag per build
 
+  # ---------------------------------------------------------------------------
+  # SonarQube Static Code Analysis & Quality Gate Settings
+  # ---------------------------------------------------------------------------
+  sonarQubeServiceConnection: 'SonarQube-ServiceConnection' # SonarQube Service Connection name in Azure DevOps
+  sonarQubeProjectKey: 'EnterpriseUserManagementPlatform'  # Unique SonarQube project identifier
+  sonarQubeProjectName: 'EnterpriseUserManagementPlatform' # SonarQube project display name
+
 pool:
   vmImage: 'ubuntu-latest'
 
@@ -67,10 +74,10 @@ stages:
     displayName: 'CI: Build, Test & Containerize'
     jobs:
       # -------------------------------------------------------------------------
-      # Job 1: .NET 9 Backend Build & Automated Test Execution
+      # Job 1: .NET 9 Backend Build, Quality Analysis & Automated Tests
       # -------------------------------------------------------------------------
       - job: Backend_CI
-        displayName: 'Backend Build & Unit/Integration Tests'
+        displayName: 'Backend Build, Quality Analysis & Automated Tests'
         steps:
           - task: UseDotNet@2
             displayName: 'Install .NET Core SDK $(dotnetVersion)'
@@ -78,12 +85,32 @@ stages:
               packageType: 'sdk'
               version: '$(dotnetVersion)'
 
+          - script: |
+              dotnet tool install --global dotnet-reportgenerator-globaltool --version 5.4.3 || true
+            displayName: 'Install ReportGenerator Global Tool'
+
+          # Step 1: Prepare SonarQube Static Code Analysis before build
+          - task: SonarQubePrepare@7
+            displayName: 'Prepare SonarQube Static Code Analysis'
+            inputs:
+              SonarQube: '$(sonarQubeServiceConnection)'
+              scannerMode: 'dotnet'
+              projectKey: '$(sonarQubeProjectKey)'
+              projectName: '$(sonarQubeProjectName)'
+              extraProperties: |
+                sonar.cs.opencover.reportsPaths=$(Build.SourcesDirectory)/**/TestResults/**/*.opencover.xml
+                sonar.cs.vstest.reportsPaths=$(Agent.TempDirectory)/**/*.trx
+                sonar.coverage.exclusions=**/Migrations/**,**/Program.cs,**/tests/**,**/*.Tests/**
+                sonar.cpd.exclusions=**/Migrations/**
+
+          # Step 2: Restore NuGet Packages
           - task: DotNetCoreCLI@2
             displayName: 'Restore NuGet Packages'
             inputs:
               command: 'restore'
               projects: 'backend/EnterpriseUserManagement.sln'
 
+          # Step 3: Build Solution
           - task: DotNetCoreCLI@2
             displayName: 'Build Solution ($(buildConfiguration))'
             inputs:
@@ -91,19 +118,66 @@ stages:
               projects: 'backend/EnterpriseUserManagement.sln'
               arguments: '--configuration $(buildConfiguration) --no-restore'
 
+          # Step 4: Execute Unit Tests & Generate OpenCover Report
           - task: DotNetCoreCLI@2
-            displayName: 'Execute Automated Tests & Collect Coverage'
+            displayName: 'Execute Unit Tests & Collect OpenCover Coverage'
             inputs:
               command: 'test'
-              projects: 'backend/EnterpriseUserManagement.sln'
-              arguments: '--configuration $(buildConfiguration) --no-build --logger trx --collect:"XPlat Code Coverage"'
+              projects: 'backend/tests/EnterpriseUserManagement.UnitTests/EnterpriseUserManagement.UnitTests.csproj'
+              arguments: '--configuration $(buildConfiguration) --no-build --logger trx /p:CollectCoverage=true /p:CoverletOutputFormat=opencover /p:CoverletOutput=$(Build.SourcesDirectory)/TestResults/Coverage/unit.opencover.xml /p:Exclude="[*]*.Migrations.*%2c[*]*.ApplicationDbContextModelSnapshot" /p:ExcludeByAttribute="CompilerGeneratedAttribute%2cGeneratedCodeAttribute"'
               publishTestResults: true
 
-          - task: PublishCodeCoverageResults@2
-            displayName: 'Publish Code Coverage Results'
+          # Step 5: Execute Integration Tests & Generate OpenCover Report
+          - task: DotNetCoreCLI@2
+            displayName: 'Execute Integration Tests & Collect OpenCover Coverage'
             inputs:
-              summaryFileLocation: '$(Agent.TempDirectory)/**/coverage.cobertura.xml'
+              command: 'test'
+              projects: 'backend/tests/EnterpriseUserManagement.IntegrationTests/EnterpriseUserManagement.IntegrationTests.csproj'
+              arguments: '--configuration $(buildConfiguration) --no-build --logger trx /p:CollectCoverage=true /p:CoverletOutputFormat=opencover /p:CoverletOutput=$(Build.SourcesDirectory)/TestResults/Coverage/integration.opencover.xml /p:Exclude="[*]*.Migrations.*%2c[*]*.ApplicationDbContextModelSnapshot" /p:ExcludeByAttribute="CompilerGeneratedAttribute%2cGeneratedCodeAttribute"'
+              publishTestResults: true
+
+          # Step 6: Generate HTML & Cobertura Coverage Reports via ReportGenerator
+          - script: |
+              reportgenerator \
+                -reports:"$(Build.SourcesDirectory)/TestResults/Coverage/*.opencover.xml" \
+                -targetdir:"$(Build.SourcesDirectory)/CoverageReport" \
+                -reporttypes:"HtmlInline_AzurePipelines;Cobertura;Badges" \
+                -assemblyfilters:"-*.Tests;-*.UnitTests;-*.IntegrationTests" \
+                -classfilters:"-*.Migrations.*;-*ApplicationDbContextModelSnapshot"
+            displayName: 'Generate HTML & Cobertura Coverage Reports'
             condition: succeededOrFailed()
+
+          # Step 7: Publish Cobertura Results natively to Azure DevOps Code Coverage tab
+          - task: PublishCodeCoverageResults@2
+            displayName: 'Publish Code Coverage Results to Azure DevOps'
+            inputs:
+              summaryFileLocation: '$(Build.SourcesDirectory)/CoverageReport/Cobertura.xml'
+              pathToSources: '$(Build.SourcesDirectory)/backend/src'
+            condition: succeededOrFailed()
+
+          # Step 8: Publish Interactive HTML Coverage Report as Pipeline Artifact
+          - task: PublishPipelineArtifact@1
+            displayName: 'Publish HTML Coverage Report Artifact'
+            inputs:
+              targetPath: '$(Build.SourcesDirectory)/CoverageReport'
+              artifact: 'CodeCoverageReport_HTML'
+            condition: succeededOrFailed()
+
+          # Step 9: Execute SonarQube Static Code Analysis
+          - task: SonarQubeAnalyze@7
+            displayName: 'Execute SonarQube Static Code Analysis'
+
+          # Step 10: Publish SonarQube Analysis Results
+          - task: SonarQubePublish@7
+            displayName: 'Publish SonarQube Analysis Results'
+            inputs:
+              pollingTimeoutSec: '300'
+
+          # Step 11: Enforce SonarQube Quality Gate (Fails CI and blocks deployment if gate fails)
+          - task: SonarQubeQualityGate@7
+            displayName: 'Enforce SonarQube Quality Gate'
+            inputs:
+              pollingTimeoutSec: '300'
 
       # -------------------------------------------------------------------------
       # Job 2: Angular 19 Frontend Build & Verification

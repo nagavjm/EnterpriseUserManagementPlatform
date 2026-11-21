@@ -3,6 +3,7 @@ using EnterpriseUserManagement.Application.Services;
 using EnterpriseUserManagement.Domain.Entities;
 using EnterpriseUserManagement.Domain.Enums;
 using Moq;
+using Xunit;
 
 namespace EnterpriseUserManagement.UnitTests.Application;
 
@@ -49,5 +50,55 @@ public class DashboardServiceTests
 
         Assert.Equal(3, summary.RecentUsers.Count);
     }
-}
 
+    [Fact]
+    public async Task GetSummaryAsync_WhenNoUsers_ReturnsZeroCounts()
+    {
+        // Arrange
+        _userRepoMock.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<User>());
+
+        // Act
+        var summary = await _sut.GetSummaryAsync();
+
+        // Assert
+        Assert.Equal(0, summary.TotalUsers);
+        Assert.Equal(0, summary.ActiveUsers);
+        Assert.Equal(0, summary.InactiveUsers);
+        Assert.Empty(summary.RecentUsers);
+
+        foreach (var dept in Enum.GetValues<Department>())
+        {
+            Assert.Equal(0, summary.UsersByDepartment[dept.ToString()]);
+        }
+
+        foreach (var role in Enum.GetValues<UserRole>())
+        {
+            Assert.Equal(0, summary.UsersByRole[role.ToString()]);
+        }
+    }
+
+    [Fact]
+    public async Task GetSummaryAsync_WhenMoreThan5Users_ReturnsTop5Recent()
+    {
+        // Arrange
+        var users = new List<User>();
+        for (var i = 1; i <= 7; i++)
+        {
+            var user = User.Create($"User{i}", "Test", $"user{i}@test.com", Department.Engineering, UserRole.Employee);
+            user.CreatedDate = DateTime.UtcNow.AddMinutes(i); // Incremental timestamps
+            users.Add(user);
+        }
+
+        _userRepoMock.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(users);
+
+        // Act
+        var summary = await _sut.GetSummaryAsync();
+
+        // Assert
+        Assert.Equal(7, summary.TotalUsers);
+        Assert.Equal(5, summary.RecentUsers.Count);
+        Assert.Equal("User7", summary.RecentUsers[0].FirstName);
+    }
+}
