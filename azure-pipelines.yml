@@ -103,6 +103,23 @@ stages:
                 sonar.coverage.exclusions=**/Migrations/**,**/Program.cs,**/tests/**,**/*.Tests/**
                 sonar.cpd.exclusions=**/Migrations/**
 
+          # Step 1.1: Sanitize initial SonarQube parameters for Community Edition
+          - script: |
+              node -e '
+                const params = process.env.SONARQUBE_SCANNER_PARAMS;
+                if (params) {
+                  try {
+                    const obj = JSON.parse(params);
+                    delete obj["sonar.branch.name"];
+                    delete obj["sonar.branch.target"];
+                    console.log("##vso[task.setvariable variable=SONARQUBE_SCANNER_PARAMS]" + JSON.stringify(obj));
+                  } catch (e) {}
+                }
+              '
+              find $(Agent.TempDirectory) -name "*.properties" -exec sed -i '/sonar\.branch\./d' {} + 2>/dev/null || true
+              find $(Build.SourcesDirectory) -name "*.properties" -exec sed -i '/sonar\.branch\./d' {} + 2>/dev/null || true
+            displayName: 'Sanitize Initial Parameters for Community Edition'
+
           # Step 2: Restore NuGet Packages
           - task: DotNetCoreCLI@2
             displayName: 'Restore NuGet Packages'
@@ -166,6 +183,26 @@ stages:
               targetPath: '$(Build.SourcesDirectory)/CoverageReport'
               artifact: 'CodeCoverageReport_HTML'
             condition: succeeded()
+
+          # Step 8.5: Sanitize branch parameters for SonarQube Community Edition
+          - script: |
+              node -e '
+                const params = process.env.SONARQUBE_SCANNER_PARAMS;
+                if (params) {
+                  try {
+                    const obj = JSON.parse(params);
+                    delete obj["sonar.branch.name"];
+                    delete obj["sonar.branch.target"];
+                    console.log("##vso[task.setvariable variable=SONARQUBE_SCANNER_PARAMS]" + JSON.stringify(obj));
+                    console.log("Sanitized SONARQUBE_SCANNER_PARAMS for Community Edition.");
+                  } catch (e) {
+                    console.error("Could not parse SONARQUBE_SCANNER_PARAMS", e);
+                  }
+                }
+              '
+              find $(Agent.TempDirectory) -name "*.properties" -exec sed -i '/sonar\.branch\./d' {} + 2>/dev/null || true
+              find $(Build.SourcesDirectory) -name "*.properties" -exec sed -i '/sonar\.branch\./d' {} + 2>/dev/null || true
+            displayName: 'Sanitize Parameters for SonarQube Community Edition'
 
           # Step 9: Execute SonarQube Static Code Analysis
           - task: SonarQubeAnalyze@7
