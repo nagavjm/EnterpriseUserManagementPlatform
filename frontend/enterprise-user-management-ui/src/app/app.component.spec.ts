@@ -1,10 +1,14 @@
 import { TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import { AppComponent } from './app.component';
 
 describe('AppComponent', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [AppComponent],
+      providers: [
+        provideRouter([])
+      ]
     }).compileComponents();
   });
 
@@ -14,16 +18,17 @@ describe('AppComponent', () => {
     expect(app).toBeTruthy();
   });
 
-  it(`should have the 'enterprise-user-management-ui' title`, () => {
+  it(`should have the 'Enterprise User Management Platform' title`, () => {
     const fixture = TestBed.createComponent(AppComponent);
     const app = fixture.componentInstance;
-    expect(app.title).toEqual('enterprise-user-management-ui');
+    expect(app.title).toEqual('Enterprise User Management Platform');
   });
 
-  it('should render title', () => {
+  it('should toggle sidebar state', () => {
     const fixture = TestBed.createComponent(AppComponent);
-    fixture.detectChanges();
-    const compiled = fixture.nativeElement as HTMLElement;
-    expect(compiled.querySelector('h1')?.textContent).toContain('Hello, enterprise-user-management-ui');
+    const app = fixture.componentInstance;
+    expect(app.isSidebarCollapsed).toBeFalse();
+    app.toggleSidebar();
+    expect(app.isSidebarCollapsed).toBeTrue();
   });
 });

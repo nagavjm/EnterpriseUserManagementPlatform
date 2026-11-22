@@ -2,7 +2,12 @@
   <!-- Header -->
   <div class="d-flex align-items-center justify-content-between mb-4">
     <div>
-      <h2 class="h3 fw-bold text-body mb-1">{{ isEditMode ? 'Edit User Profile' : 'Add New Enterprise User' }}</h2>
+      <div class="d-flex align-items-center gap-2 mb-1">
+        <h2 class="h3 fw-bold text-body mb-0">{{ isEditMode ? 'Edit User Profile' : 'Add New Enterprise User' }}</h2>
+        <span *ngIf="userForm && userForm.dirty && !isSubmitting" class="badge bg-warning-subtle text-warning border border-warning-subtle d-inline-flex align-items-center">
+          <i class="bi bi-pencil-fill me-1"></i> Unsaved Changes
+        </span>
+      </div>
       <p class="text-muted mb-0">
         {{ isEditMode ? 'Update user details. Changes will be persisted to the JSON data store.' : 'Enter personal details, assign department and role for the new user.' }}
       </p>
@@ -16,6 +21,17 @@
 
   <div *ngIf="!isLoading" class="card border-0 shadow-sm">
     <div class="card-body p-4">
+      <!-- Unsaved Changes Notice Banner -->
+      <div *ngIf="userForm && userForm.dirty && !isSubmitting" class="alert alert-warning py-2 px-3 d-flex align-items-center justify-content-between mb-4 small border-warning-subtle" role="alert">
+        <div class="d-flex align-items-center">
+          <i class="bi bi-exclamation-triangle-fill text-warning fs-5 me-2"></i>
+          <span>You have unsaved changes in this form. Remember to save before navigating away.</span>
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" (click)="resetForm()" title="Revert to original values">
+          <i class="bi bi-arrow-counterclockwise me-1"></i> Revert
+        </button>
+      </div>
+
       <form [formGroup]="userForm" (ngSubmit)="onSubmit()" novalidate>
         <div class="row g-3">
           <!-- First Name -->
@@ -104,6 +120,14 @@
 
         <!-- Form Actions -->
         <div class="d-flex justify-content-end gap-2">
+          <button 
+            type="button" 
+            *ngIf="userForm && userForm.dirty && !isSubmitting" 
+            class="btn btn-outline-secondary" 
+            (click)="resetForm()"
+            title="Revert all unsaved changes">
+            <i class="bi bi-arrow-counterclockwise me-1"></i> Revert
+          </button>
           <a routerLink="/users" class="btn btn-outline-secondary">Cancel</a>
           <button type="submit" class="btn btn-primary px-4" [disabled]="isSubmitting">
             <span *ngIf="isSubmitting" class="spinner-border spinner-border-sm me-1" role="status"></span>

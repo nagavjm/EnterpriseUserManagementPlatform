@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, HostListener, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule, Router, ActivatedRoute } from '@angular/router';
 import { FormBuilder, FormGroup, Validators, ReactiveFormsModule } from '@angular/forms';
@@ -6,6 +6,7 @@ import { UserService } from '../../../core/services/user.service';
 import { NotificationService } from '../../../core/services/notification.service';
 import { Department, UserRole } from '../../../shared/models/user.model';
 import { LoadingSpinnerComponent } from '../../../shared/components/loading-spinner/loading-spinner.component';
+import { ComponentCanDeactivate } from '../../../core/guards/unsaved-changes.guard';
 
 @Component({
   selector: 'app-user-form',
@@ -14,7 +15,7 @@ import { LoadingSpinnerComponent } from '../../../shared/components/loading-spin
   templateUrl: './user-form.component.html',
   styleUrls: ['./user-form.component.css']
 })
-export class UserFormComponent implements OnInit {
+export class UserFormComponent implements OnInit, ComponentCanDeactivate {
   private fb = inject(FormBuilder);
   private userService = inject(UserService);
   private notificationService = inject(NotificationService);
@@ -27,8 +28,31 @@ export class UserFormComponent implements OnInit {
   isLoading = false;
   isSubmitting = false;
 
+  private initialFormValue: any = null;
+
   departments = Object.values(Department);
   roles = Object.values(UserRole);
+
+  /**
+   * Browser unload listener: warns the user when attempting to close tab,
+   * reload (F5), or navigate away to an external URL with unsaved changes.
+   */
+  @HostListener('window:beforeunload', ['$event'])
+  onBeforeUnload(event: BeforeUnloadEvent): void {
+    if (this.hasUnsavedChanges()) {
+      event.preventDefault();
+      // Modern browsers require returnValue to be set to trigger prompt
+      event.returnValue = true;
+    }
+  }
+
+  /**
+   * Returns true if there are pending unsaved changes on the form.
+   * Implements ComponentCanDeactivate for Angular route transitions.
+   */
+  hasUnsavedChanges(): boolean {
+    return !this.isSubmitting && !!this.userForm && this.userForm.dirty;
+  }
 
   ngOnInit(): void {
     this.initForm();
@@ -50,6 +74,7 @@ export class UserFormComponent implements OnInit {
       department: ['', [Validators.required]],
       role: ['', [Validators.required]]
     });
+    this.initialFormValue = this.userForm.getRawValue();
   }
 
   private loadUserForEdit(id: string): void {
@@ -67,6 +92,8 @@ export class UserFormComponent implements OnInit {
           });
           // Disable email editing in edit mode to preserve unique identifier
           this.userForm.get('email')?.disable();
+          this.userForm.markAsPristine();
+          this.initialFormValue = this.userForm.getRawValue();
         }
         this.isLoading = false;
       },
@@ -75,6 +102,28 @@ export class UserFormComponent implements OnInit {
         this.router.navigate(['/users']);
       }
     });
+  }
+
+  /**
+   * Reverts all changes back to initial state and marks form as pristine.
+   */
+  resetForm(): void {
+    if (this.initialFormValue) {
+      this.userForm.reset(this.initialFormValue);
+      if (this.isEditMode) {
+        this.userForm.get('email')?.disable();
+      }
+    } else {
+      this.userForm.reset({
+        firstName: '',
+        lastName: '',
+        email: '',
+        department: '',
+        role: ''
+      });
+    }
+    this.userForm.markAsPristine();
+    this.notificationService.showInfo('Form changes have been reverted.');
   }
 
   onSubmit(): void {
@@ -96,6 +145,7 @@ export class UserFormComponent implements OnInit {
         next: (res) => {
           this.isSubmitting = false;
           if (res.success) {
+            this.userForm.markAsPristine();
             this.notificationService.showSuccess(`User '${res.data.fullName}' updated successfully.`);
             this.router.navigate(['/users']);
           }
@@ -115,6 +165,7 @@ export class UserFormComponent implements OnInit {
         next: (res) => {
           this.isSubmitting = false;
           if (res.success) {
+            this.userForm.markAsPristine();
             this.notificationService.showSuccess(`User '${res.data.fullName}' created successfully.`);
             this.router.navigate(['/users']);
           }

@@ -1,4 +1,5 @@
 import { Routes } from '@angular/router';
+import { unsavedChangesGuard } from './core/guards/unsaved-changes.guard';
 
 export const routes: Routes = [
   {
@@ -19,11 +20,13 @@ export const routes: Routes = [
   {
     path: 'users/new',
     loadComponent: () => import('./features/users/user-form/user-form.component').then(m => m.UserFormComponent),
+    canDeactivate: [unsavedChangesGuard],
     title: 'Add New User - Enterprise User Management'
   },
   {
     path: 'users/:id/edit',
     loadComponent: () => import('./features/users/user-form/user-form.component').then(m => m.UserFormComponent),
+    canDeactivate: [unsavedChangesGuard],
     title: 'Edit User - Enterprise User Management'
   },
   {
