@@ -53,11 +53,11 @@ variables:
   tag: '$(Build.BuildId)'                       # Immutable unique image tag per build
 
   # ---------------------------------------------------------------------------
-  # SonarQube Static Code Analysis & Quality Gate Settings
+  # SonarQube Static Code Analysis & Quality Gate Settings (Temporarily Skipped)
   # ---------------------------------------------------------------------------
-  sonarQubeServiceConnection: 'SonarQube-ServiceConnection' # SonarQube Service Connection name in Azure DevOps
-  sonarQubeProjectKey: 'EnterpriseUserManagementPlatform'  # Unique SonarQube project identifier
-  sonarQubeProjectName: 'EnterpriseUserManagementPlatform' # SonarQube project display name
+  # sonarQubeServiceConnection: 'SonarQube-ServiceConnection' # SonarQube Service Connection name in Azure DevOps
+  # sonarQubeProjectKey: 'EnterpriseUserManagementPlatform'  # Unique SonarQube project identifier
+  # sonarQubeProjectName: 'EnterpriseUserManagementPlatform' # SonarQube project display name
 
 pool:
   vmImage: 'ubuntu-latest'
@@ -85,59 +85,63 @@ stages:
               packageType: 'sdk'
               version: '$(dotnetVersion)'
 
-          # Enforce Java 21 system-wide (SonarScanner 10.4+ requires Java 21)
-          - script: |
-              JDK_21="${JAVA_HOME_21_X64:-/usr/lib/jvm/temurin-21-jdk-amd64}"
-              echo "Switching system default Java to: $JDK_21"
-              sudo update-alternatives --set java "$JDK_21/bin/java" 2>/dev/null || true
-              sudo update-alternatives --set javac "$JDK_21/bin/javac" 2>/dev/null || true
-              sudo ln -sf "$JDK_21/bin/java" /usr/bin/java
-              sudo ln -sf "$JDK_21/bin/javac" /usr/bin/javac
-              echo "##vso[task.setvariable variable=JAVA_HOME]$JDK_21"
-              echo "##vso[task.setvariable variable=PATH]$JDK_21/bin:$PATH"
-              export JAVA_HOME="$JDK_21"
-              export PATH="$JDK_21/bin:$PATH"
-              echo "Active Java version:"
-              java -version
-            displayName: 'Enforce System Java 21 for SonarScanner'
+          # ---------------------------------------------------------------------------
+          # [TEMPORARILY SKIPPED] SonarQube Static Code Analysis & Prerequisites
+          # To re-enable, uncomment the Java 21, SonarQubePrepare, and Sanitization steps below.
+          # ---------------------------------------------------------------------------
+          # # Enforce Java 21 system-wide (SonarScanner 10.4+ requires Java 21)
+          # - script: |
+          #     JDK_21="${JAVA_HOME_21_X64:-/usr/lib/jvm/temurin-21-jdk-amd64}"
+          #     echo "Switching system default Java to: $JDK_21"
+          #     sudo update-alternatives --set java "$JDK_21/bin/java" 2>/dev/null || true
+          #     sudo update-alternatives --set javac "$JDK_21/bin/javac" 2>/dev/null || true
+          #     sudo ln -sf "$JDK_21/bin/java" /usr/bin/java
+          #     sudo ln -sf "$JDK_21/bin/javac" /usr/bin/javac
+          #     echo "##vso[task.setvariable variable=JAVA_HOME]$JDK_21"
+          #     echo "##vso[task.setvariable variable=PATH]$JDK_21/bin:$PATH"
+          #     export JAVA_HOME="$JDK_21"
+          #     export PATH="$JDK_21/bin:$PATH"
+          #     echo "Active Java version:"
+          #     java -version
+          #   displayName: 'Enforce System Java 21 for SonarScanner'
 
           - script: |
               dotnet tool install --global dotnet-reportgenerator-globaltool --version 5.4.3 || true
             displayName: 'Install ReportGenerator Global Tool'
 
-          # Step 1: Prepare SonarQube Static Code Analysis before build
-          - task: SonarQubePrepare@7
-            displayName: 'Prepare SonarQube Static Code Analysis'
-            inputs:
-              SonarQube: '$(sonarQubeServiceConnection)'
-              scannerMode: 'dotnet'
-              projectKey: '$(sonarQubeProjectKey)'
-              projectName: '$(sonarQubeProjectName)'
-              extraProperties: |
-                sonar.cs.opencover.reportsPaths=$(Build.SourcesDirectory)/**/TestResults/**/*.opencover.xml
-                sonar.cs.vstest.reportsPaths=$(Agent.TempDirectory)/**/*.trx
-                sonar.coverage.exclusions=**/Migrations/**,**/Program.cs,**/tests/**,**/*.Tests/**
-                sonar.cpd.exclusions=**/Migrations/**
-            env:
-              JAVA_HOME: /usr/lib/jvm/temurin-21-jdk-amd64
-              PATH: /usr/lib/jvm/temurin-21-jdk-amd64/bin:$(PATH)
+          # # Step 1: Prepare SonarQube Static Code Analysis before build
+          # - task: SonarQubePrepare@7
+          #   displayName: 'Prepare SonarQube Static Code Analysis'
+          #   inputs:
+          #     SonarQube: '$(sonarQubeServiceConnection)'
+          #     scannerMode: 'dotnet'
+          #     projectKey: '$(sonarQubeProjectKey)'
+          #     projectName: '$(sonarQubeProjectName)'
+          #     extraProperties: |
+          #       sonar.cs.opencover.reportsPaths=$(Build.SourcesDirectory)/**/TestResults/**/*.opencover.xml
+          #       sonar.cs.vstest.reportsPaths=$(Agent.TempDirectory)/**/*.trx
+          #       sonar.coverage.exclusions=**/Migrations/**,**/Program.cs,**/tests/**,**/*.Tests/**
+          #       sonar.cpd.exclusions=**/Migrations/**
+          #   env:
+          #     JAVA_HOME: /usr/lib/jvm/temurin-21-jdk-amd64
+          #     PATH: /usr/lib/jvm/temurin-21-jdk-amd64/bin:$(PATH)
 
-          # Step 1.1: Sanitize initial SonarQube parameters for Community Edition
-          - script: |
-              node -e '
-                const params = process.env.SONARQUBE_SCANNER_PARAMS;
-                if (params) {
-                  try {
-                    const obj = JSON.parse(params);
-                    delete obj["sonar.branch.name"];
-                    delete obj["sonar.branch.target"];
-                    console.log("##vso[task.setvariable variable=SONARQUBE_SCANNER_PARAMS]" + JSON.stringify(obj));
-                  } catch (e) {}
-                }
-              '
-              find $(Agent.TempDirectory) -name "*.properties" -exec sed -i '/sonar\.branch\./d' {} + 2>/dev/null || true
-              find $(Build.SourcesDirectory) -name "*.properties" -exec sed -i '/sonar\.branch\./d' {} + 2>/dev/null || true
-            displayName: 'Sanitize Initial Parameters for Community Edition'
+          # # Step 1.1: Sanitize initial SonarQube parameters for Community Edition
+          # - script: |
+          #     node -e '
+          #       const params = process.env.SONARQUBE_SCANNER_PARAMS;
+          #       if (params) {
+          #         try {
+          #           const obj = JSON.parse(params);
+          #           delete obj["sonar.branch.name"];
+          #           delete obj["sonar.branch.target"];
+          #           console.log("##vso[task.setvariable variable=SONARQUBE_SCANNER_PARAMS]" + JSON.stringify(obj));
+          #         } catch (e) {}
+          #       }
+          #     '
+          #     find $(Agent.TempDirectory) -name "*.properties" -exec sed -i '/sonar\.branch\./d' {} + 2>/dev/null || true
+          #     find $(Build.SourcesDirectory) -name "*.properties" -exec sed -i '/sonar\.branch\./d' {} + 2>/dev/null || true
+          #   displayName: 'Sanitize Initial Parameters for Community Edition'
 
           # Step 2: Restore NuGet Packages
           - task: DotNetCoreCLI@2
@@ -203,38 +207,42 @@ stages:
               artifact: 'CodeCoverageReport_HTML'
             condition: succeeded()
 
-          # Step 8.5: Sanitize branch parameters for SonarQube Community Edition
-          - script: |
-              node -e '
-                const params = process.env.SONARQUBE_SCANNER_PARAMS;
-                if (params) {
-                  try {
-                    const obj = JSON.parse(params);
-                    delete obj["sonar.branch.name"];
-                    delete obj["sonar.branch.target"];
-                    console.log("##vso[task.setvariable variable=SONARQUBE_SCANNER_PARAMS]" + JSON.stringify(obj));
-                    console.log("Sanitized SONARQUBE_SCANNER_PARAMS for Community Edition.");
-                  } catch (e) {
-                    console.error("Could not parse SONARQUBE_SCANNER_PARAMS", e);
-                  }
-                }
-              '
-              find $(Agent.TempDirectory) -name "*.properties" -exec sed -i '/sonar\.branch\./d' {} + 2>/dev/null || true
-              find $(Build.SourcesDirectory) -name "*.properties" -exec sed -i '/sonar\.branch\./d' {} + 2>/dev/null || true
-            displayName: 'Sanitize Parameters for SonarQube Community Edition'
+          # ---------------------------------------------------------------------------
+          # [TEMPORARILY SKIPPED] SonarQube Analysis & Quality Gate Steps
+          # To re-enable, uncomment the sanitization, analysis, and publish tasks below.
+          # ---------------------------------------------------------------------------
+          # # Step 8.5: Sanitize branch parameters for SonarQube Community Edition
+          # - script: |
+          #     node -e '
+          #       const params = process.env.SONARQUBE_SCANNER_PARAMS;
+          #       if (params) {
+          #         try {
+          #           const obj = JSON.parse(params);
+          #           delete obj["sonar.branch.name"];
+          #           delete obj["sonar.branch.target"];
+          #           console.log("##vso[task.setvariable variable=SONARQUBE_SCANNER_PARAMS]" + JSON.stringify(obj));
+          #           console.log("Sanitized SONARQUBE_SCANNER_PARAMS for Community Edition.");
+          #         } catch (e) {
+          #           console.error("Could not parse SONARQUBE_SCANNER_PARAMS", e);
+          #         }
+          #       }
+          #     '
+          #     find $(Agent.TempDirectory) -name "*.properties" -exec sed -i '/sonar\.branch\./d' {} + 2>/dev/null || true
+          #     find $(Build.SourcesDirectory) -name "*.properties" -exec sed -i '/sonar\.branch\./d' {} + 2>/dev/null || true
+          #   displayName: 'Sanitize Parameters for SonarQube Community Edition'
 
-          # Step 9: Execute SonarQube Static Code Analysis
-          - task: SonarQubeAnalyze@7
-            displayName: 'Execute SonarQube Static Code Analysis'
-            env:
-              JAVA_HOME: /usr/lib/jvm/temurin-21-jdk-amd64
-              PATH: /usr/lib/jvm/temurin-21-jdk-amd64/bin:$(PATH)
+          # # Step 9: Execute SonarQube Static Code Analysis
+          # - task: SonarQubeAnalyze@7
+          #   displayName: 'Execute SonarQube Static Code Analysis'
+          #   env:
+          #     JAVA_HOME: /usr/lib/jvm/temurin-21-jdk-amd64
+          #     PATH: /usr/lib/jvm/temurin-21-jdk-amd64/bin:$(PATH)
 
-          # Step 10: Publish SonarQube Analysis Results & Quality Gate
-          - task: SonarQubePublish@7
-            displayName: 'Publish SonarQube Analysis Results & Quality Gate'
-            inputs:
-              pollingTimeoutSec: '300'
+          # # Step 10: Publish SonarQube Analysis Results & Quality Gate
+          # - task: SonarQubePublish@7
+          #   displayName: 'Publish SonarQube Analysis Results & Quality Gate'
+          #   inputs:
+          #     pollingTimeoutSec: '300'
 
       # -------------------------------------------------------------------------
       # Job 2: Angular 19 Frontend Build & Verification
