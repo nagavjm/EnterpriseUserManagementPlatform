@@ -2,7 +2,7 @@
   <!-- Header -->
   <div class="d-flex align-items-center justify-content-between mb-4">
     <div>
-      <h2 class="h3 fw-bold text-dark mb-1">User Details</h2>
+      <h2 class="h3 fw-bold text-body mb-1">User Details</h2>
       <p class="text-muted mb-0">Inspect user demographics, system role permissions, and activity metadata.</p>
     </div>
     <a routerLink="/users" class="btn btn-outline-secondary">
@@ -14,7 +14,7 @@
 
   <div *ngIf="!isLoading && user" class="card border-0 shadow-sm">
     <!-- Card Header with Avatar and Basic Info -->
-    <div class="card-header bg-white p-4 border-bottom d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+    <div class="card-header bg-body p-4 border-bottom d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
       <div class="d-flex align-items-center gap-3">
         <div class="avatar bg-primary text-white rounded-circle d-flex align-items-center justify-content-center fw-bold fs-3" style="width: 64px; height: 64px;">
           {{ user.firstName[0] }}{{ user.lastName[0] }}
@@ -45,14 +45,14 @@
     <div class="card-body p-4">
       <div class="row g-4">
         <div class="col-12 col-md-6">
-          <div class="p-3 bg-light rounded-3">
+          <div class="p-3 bg-body-secondary rounded-3">
             <span class="text-muted small text-uppercase fw-semibold d-block mb-1">Unique Identifier</span>
             <code class="text-primary fs-6">{{ user.id }}</code>
           </div>
         </div>
 
         <div class="col-12 col-md-6">
-          <div class="p-3 bg-light rounded-3">
+          <div class="p-3 bg-body-secondary rounded-3">
             <span class="text-muted small text-uppercase fw-semibold d-block mb-1">Account Status</span>
             <span class="badge" [ngClass]="user.isActive ? 'bg-success' : 'bg-secondary'">
               <i class="bi" [ngClass]="user.isActive ? 'bi-check-circle' : 'bi-x-circle'"></i>
@@ -62,28 +62,28 @@
         </div>
 
         <div class="col-12 col-md-6">
-          <div class="p-3 bg-light rounded-3">
+          <div class="p-3 bg-body-secondary rounded-3">
             <span class="text-muted small text-uppercase fw-semibold d-block mb-1">Department</span>
-            <span class="badge bg-white text-dark border fs-6">{{ user.departmentName }}</span>
+            <span class="badge bg-body text-body border fs-6">{{ user.departmentName }}</span>
           </div>
         </div>
 
         <div class="col-12 col-md-6">
-          <div class="p-3 bg-light rounded-3">
+          <div class="p-3 bg-body-secondary rounded-3">
             <span class="text-muted small text-uppercase fw-semibold d-block mb-1">System Role</span>
             <span class="badge bg-primary-subtle text-primary fs-6">{{ user.roleName }}</span>
           </div>
         </div>
 
         <div class="col-12 col-md-6">
-          <div class="p-3 bg-light rounded-3">
+          <div class="p-3 bg-body-secondary rounded-3">
             <span class="text-muted small text-uppercase fw-semibold d-block mb-1">Created Date</span>
             <div class="fw-semibold">{{ user.createdDate | date:'fullDate' }} at {{ user.createdDate | date:'shortTime' }}</div>
           </div>
         </div>
 
         <div class="col-12 col-md-6">
-          <div class="p-3 bg-light rounded-3">
+          <div class="p-3 bg-body-secondary rounded-3">
             <span class="text-muted small text-uppercase fw-semibold d-block mb-1">Last Modified</span>
             <div class="fw-semibold">{{ user.modifiedDate ? ((user.modifiedDate | date:'fullDate') + ' at ' + (user.modifiedDate | date:'shortTime')) : 'Never modified' }}</div>
           </div>
